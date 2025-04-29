@@ -25,7 +25,13 @@ class EventServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Register model observers
+        \App\Models\Product::observe(\App\Observers\ProductObserver::class);
+        \App\Models\PricingRule::observe(\App\Observers\PricingRuleObserver::class);
+
+        // Register price update listener for specific model events
+        Event::listen('eloquent.saved: *', \App\Listeners\PriceUpdateListener::class);
+        Event::listen('eloquent.deleted: *', \App\Listeners\PriceUpdateListener::class);
     }
 
     /**

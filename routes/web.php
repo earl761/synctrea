@@ -1,6 +1,10 @@
 <?php
 
+use App\Http\Controllers\AmazonAuthController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('amazon/auth/{destination}', [AmazonAuthController::class, 'redirect'])->name('amazon.auth');
+Route::get('amazon/callback', [AmazonAuthController::class, 'callback'])->name('amazon.callback');
 
 /*
 |--------------------------------------------------------------------------

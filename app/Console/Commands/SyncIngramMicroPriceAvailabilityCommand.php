@@ -1,0 +1,170 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Models\Product;
+use App\Models\Supplier;
+use App\Models\SyncLog;
+use App\Services\Api\IngramMicroApiClient;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+class SyncIngramMicroPriceAvailabilityCommand extends Command
+{
+    protected $signature = 'ingram:sync-price-availability
+        {--chunk=50 : Number of products to process per API call}
+        {--force : Force sync even if there was a recent successful sync}'
+    ;
+
+    protected $description = 'Sync product prices and availability from Ingram Micro';
+
+    public function handle(): int
+    {
+        // Get the supplier first to ensure it exists before creating the sync log
+        $supplier = Supplier::where('type', 'ingram_micro')
+            ->where('is_active', true)
+            ->firstOrFail();
+
+        Log::info('Supplier: '. $supplier->id);
+        // Create a new sync log for this sync
+
+        $syncLog = new SyncLog([
+            'supplier_id' => $supplier->id,
+            'type' => 'ingram_micro_price_availability',
+            'status' => 'running',
+            'started_at' => now(),
+        ]);
+        $syncLog->save();
+
+        try {
+            // Check for recent successful sync unless forced
+            if (!$this->option('force')) {
+                $recentSync = SyncLog::where('type', 'ingram_micro_price_availability')
+                    ->where('status', 'completed')
+                    ->where('created_at', '>=', now()->subHours(1))
+                    ->exists();
+
+                if ($recentSync) {
+                    $this->warn('A successful sync was performed in the last hour. Use --force to override.');
+                    return Command::FAILURE;
+                }
+            }
+
+            $client = new IngramMicroApiClient($supplier);
+
+            $client->initialize();
+
+            $chunkSize = min((int) $this->option('chunk'), 50);
+            $totalProcessed = 0;
+            $totalUpdated = 0;
+
+
+            $this->info('Starting Ingram Micro price and availability sync...');
+
+            // Process products in chunks
+            Product::where('supplier_id', $supplier->id)
+                ->whereNotNull('sku')
+                ->chunkById($chunkSize, function ($products) use ($client, &$totalProcessed, &$totalUpdated) {
+                    $skus = $products->pluck('sku')->toArray();
+                    
+                    try {
+                        $result = $client->getPriceAndAvailability([
+                            'products' => array_map(function ($sku) {
+                                return ['ingramPartNumber' => $sku];
+                            }, $skus),
+                            'includeAvailability' => true,
+                            'includePricing' => true,
+                            'showAvailableDiscounts' => true,
+                        ]);
+
+
+
+
+                        DB::beginTransaction();
+                        try {
+                            foreach ($result as $item) {
+
+                                Log::info('Item: '. json_encode($item));
+
+                                $sku = $item['ingramPartNumber'] ?? null;
+                                if (!$sku) continue;
+
+                                $product = $products->firstWhere('sku', $sku);
+                                if (!$product) continue;
+
+                                $pricing = $item['pricing'] ?? [];
+                                Log::info('Pricing: '. json_encode($pricing));
+                                $availability = $item['availability'] ?? [];
+                                Log::info('Availability: '. json_encode($availability));
+
+                                $product->update([
+
+                                    'cost_price' => $pricing['customerPrice'] ?? 0,
+                                    'retail_price' => $pricing['retailPrice'] ?? 0,
+                                    'quantity' => $availability['totalAvailableQuantity'] ?? 0,
+                                    'metadata' => array_merge(
+                                        $product->metadata ?? [],
+                                        [
+                                            'pricing' => $pricing,
+                                            'availability' => $availability,
+                                        ]
+                                    ),
+                                    'synced_at' => now(),
+                                ]);
+
+                                $totalUpdated++;
+                            }
+                            DB::commit();
+                        } catch (\Exception $e) {
+                            DB::rollBack();
+                            throw $e;
+                        }
+
+                        $totalProcessed += count($skus);
+                        $this->info(sprintf(
+                            'Processed %d products, updated %d',
+                            $totalProcessed,
+                            $totalUpdated
+                        ));
+                    } catch (\Exception $e) {
+                        Log::error('Failed to process chunk: ' . $e->getMessage(), [
+                            'skus' => $skus,
+                            'exception' => $e,
+                        ]);
+                        $this->error('Failed to process chunk: ' . $e->getMessage());
+                    }
+                });
+
+            $syncLog->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+                'metadata' => [
+                    'total_processed' => $totalProcessed,
+                    'total_updated' => $totalUpdated,
+                ],
+            ]);
+
+            $this->info(sprintf(
+                'Sync completed. Processed %d products, updated %d',
+                $totalProcessed,
+                $totalUpdated
+            ));
+
+            return Command::SUCCESS;
+        } catch (\Exception $e) {
+            Log::error('Ingram Micro price and availability sync failed: ' . $e->getMessage(), [
+                'exception' => $e,
+            ]);
+
+            $syncLog->update([
+                'status' => 'failed',
+                'completed_at' => now(),
+                'error' => $e->getMessage(),
+            ]);
+
+            $this->error('Sync failed: ' . $e->getMessage());
+            return Command::FAILURE;
+        }
+    }
+}

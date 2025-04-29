@@ -1,0 +1,13 @@
+<?php
+
+namespace App\Enums;
+
+enum AmazonFeedType: string
+{
+    case INVENTORY = 'POST_INVENTORY_AVAILABILITY_DATA';
+    case PRICING = 'POST_PRODUCT_PRICING_DATA';
+    case PRODUCT = 'POST_PRODUCT_DATA';
+    case PRODUCT_IMAGES = 'POST_PRODUCT_IMAGE_DATA';
+    case LISTINGS = 'POST_FLAT_FILE_LISTINGS_DATA';
+    case JSON_LISTINGS = 'JSON_LISTINGS_FEED';
+}
