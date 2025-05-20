@@ -19,6 +19,6 @@ class EditConnectionPairProduct extends EditRecord
 
     protected function getRedirectUrl(): string
     {
-        return $this->getResource()::getUrl('index');
+        return $this->getResource()::getUrl('index', ['connection_pair_id' => $this->record->connection_pair_id]);
     }
 }

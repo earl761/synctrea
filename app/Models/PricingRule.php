@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Log;
 
 class PricingRule extends Model
 {
@@ -67,6 +68,11 @@ class PricingRule extends Model
         return $this->belongsTo(Product::class);
     }
 
+    public function company()
+    {
+        return $this->belongsTo(\App\Models\Company::class);
+    }
+
     // Scopes
     public function scopeActive($query)
     {
@@ -98,25 +104,31 @@ class PricingRule extends Model
             return $basePrice;
         }
 
-        switch ($this->rule_type) {
-            case self::RULE_TYPE_PERCENTAGE_MARKUP:
-                return $basePrice * (1 + ($this->value / 100));
+        Log::info('Calculating price with rule', [
+            'rule_id' => $this->id,
+            'rule_type' => $this->rule_type,
+            'base_price' => $basePrice,
+            'value' => $this->value,
+            'percentage_value' => $this->percentage_value,
+            'amount_value' => $this->amount_value
+        ]);
 
-            case self::RULE_TYPE_FLAT_MARKUP:
-                return $basePrice + $this->value;
+        $finalPrice = match ($this->rule_type) {
+            self::RULE_TYPE_PERCENTAGE_MARKUP => $basePrice * (1 + ($this->value / 100)),
+            self::RULE_TYPE_FLAT_MARKUP => $basePrice + $this->value,
+            self::RULE_TYPE_TIERED => $this->calculateTieredPrice($basePrice, $quantity),
+            self::RULE_TYPE_PERCENTAGE_AMOUNT => $this->calculateCombinedPrice($basePrice, true),
+            self::RULE_TYPE_AMOUNT_PERCENTAGE => $this->calculateCombinedPrice($basePrice, false),
+            default => $basePrice,
+        };
 
-            case self::RULE_TYPE_TIERED:
-                return $this->calculateTieredPrice($basePrice, $quantity);
+        Log::info('Price calculated', [
+            'rule_id' => $this->id,
+            'base_price' => $basePrice,
+            'final_price' => $finalPrice
+        ]);
 
-            case self::RULE_TYPE_PERCENTAGE_AMOUNT:
-                return $this->calculateCombinedPrice($basePrice, true);
-
-            case self::RULE_TYPE_AMOUNT_PERCENTAGE:
-                return $this->calculateCombinedPrice($basePrice, false);
-
-            default:
-                return $basePrice;
-        }
+        return $finalPrice;
     }
 
     protected function calculateTieredPrice(float $basePrice, int $quantity): float

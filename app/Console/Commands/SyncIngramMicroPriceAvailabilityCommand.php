@@ -66,26 +66,40 @@ class SyncIngramMicroPriceAvailabilityCommand extends Command
             Product::where('supplier_id', $supplier->id)
                 ->whereNotNull('sku')
                 ->chunkById($chunkSize, function ($products) use ($client, &$totalProcessed, &$totalUpdated) {
-                    $skus = $products->pluck('sku')->toArray();
+                    $productData = [];
                     
+                    foreach ($products as $product) {
+                        // Priority: ingramPartNumber (SKU) > vendorPartNumber > UPC
+                        $identifier = [];
+                        if (!empty($product->sku)) {
+                            $identifier['ingramPartNumber'] = $product->sku;
+                        } elseif (!empty($product->part_number)) {
+                            $identifier['vendorPartNumber'] = $product->part_number;
+                        } elseif (!empty($product->upc)) {
+                            $identifier['upc'] = $product->upc;
+                        }
+                        
+                        // Only add products that have a valid identifier
+                        if (!empty($identifier)) {
+                            $productData[] = $identifier;
+                        }
+                    }
+
+                    Log::info('Processing products with identifiers: ' . json_encode($productData));
+
                     try {
                         $result = $client->getPriceAndAvailability([
-                            'products' => array_map(function ($sku) {
-                                return ['ingramPartNumber' => $sku];
-                            }, $skus),
-                            'includeAvailability' => true,
-                            'includePricing' => true,
-                            'showAvailableDiscounts' => true,
+                            'products' => $productData,
+                            'includeAvailability' => 'true',
+                            'includePricing' => 'true',
+                            'showAvailableDiscounts' => 'true',
                         ]);
-
-
-
 
                         DB::beginTransaction();
                         try {
                             foreach ($result as $item) {
 
-                                Log::info('Item: '. json_encode($item));
+                                //::info('Item: '. json_encode($item));
 
                                 $sku = $item['ingramPartNumber'] ?? null;
                                 if (!$sku) continue;
@@ -94,15 +108,16 @@ class SyncIngramMicroPriceAvailabilityCommand extends Command
                                 if (!$product) continue;
 
                                 $pricing = $item['pricing'] ?? [];
-                                Log::info('Pricing: '. json_encode($pricing));
+                                //Log::info('Pricing: '. json_encode($pricing));
                                 $availability = $item['availability'] ?? [];
-                                Log::info('Availability: '. json_encode($availability));
+                               // Log::info('Availability: '. json_encode($availability));
 
                                 $product->update([
-
                                     'cost_price' => $pricing['customerPrice'] ?? 0,
+                                    'currency_code' => $pricing['currencyCode'] ?? 'USD',
                                     'retail_price' => $pricing['retailPrice'] ?? 0,
-                                    'quantity' => $availability['totalAvailableQuantity'] ?? 0,
+                                    'map_price' => $pricing['mapPrice'] ?? 0,
+                                    'stock_quantity' => $availability['totalAvailability'] ?? 0,
                                     'metadata' => array_merge(
                                         $product->metadata ?? [],
                                         [
@@ -121,7 +136,7 @@ class SyncIngramMicroPriceAvailabilityCommand extends Command
                             throw $e;
                         }
 
-                        $totalProcessed += count($skus);
+                        $totalProcessed += count($productData);
                         $this->info(sprintf(
                             'Processed %d products, updated %d',
                             $totalProcessed,
@@ -129,7 +144,7 @@ class SyncIngramMicroPriceAvailabilityCommand extends Command
                         ));
                     } catch (\Exception $e) {
                         Log::error('Failed to process chunk: ' . $e->getMessage(), [
-                            'skus' => $skus,
+                            'productData' => $productData,
                             'exception' => $e,
                         ]);
                         $this->error('Failed to process chunk: ' . $e->getMessage());

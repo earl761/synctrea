@@ -3,360 +3,280 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ConnectionPairProductResource\Pages;
-use App\Models\ConnectionPair;
+use App\Models\ConnectionPairProduct;
 use App\Models\Product;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
+use App\Models\ConnectionPair;
+use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
-use Filament\Tables\Actions\BulkAction;
-use Filament\Tables\Actions\DeleteBulkAction;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Table;
 use Filament\Tables;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
-use Filament\Forms\Components\Repeater;
-use Filament\Forms\Components\FileUpload;
-use League\Csv\Reader;
-use Illuminate\Support\Facades\Storage;
-
+use Illuminate\Support\Facades\Log;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Forms\Components\Select;
+use Filament\Tables\Actions\BulkAction;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
+use Filament\Notifications\Notification;
 
 class ConnectionPairProductResource extends Resource
 {
-    protected static ?string $model = Product::class;
+    protected static ?string $model = ConnectionPairProduct::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
-    protected static ?string $navigationGroup = 'Catalog Management';
-    protected static ?string $navigationLabel = 'Connection Pair Products';
+    protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
+    protected static ?string $navigationGroup = 'Integrations';
     protected static ?int $navigationSort = 3;
-
-    public static function getEloquentQuery(): Builder
-    {
-        $connectionPairId = request()->get('tableFilters')['connection_pair'] ?? null;
-
-        if ($connectionPairId) {
-            $connectionPair = ConnectionPair::find($connectionPairId);
-            return parent::getEloquentQuery()
-                ->where('supplier_id', $connectionPair->supplier_id);
-        }
-
-        return parent::getEloquentQuery();
-    }
+    protected static ?string $navigationLabel = 'Connection Products';
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                TextInput::make('name')
+                Forms\Components\Select::make('connection_pair_id')
+                    ->relationship('connectionPair', 'id')
                     ->required()
-                    ->disabled(),
-                    
-                TextInput::make('sku')
+                    ->default(fn () => request()->query('connection_pair_id')),
+                Forms\Components\TextInput::make('sku')
                     ->required()
-                    ->disabled(),
-
-                Select::make('catalog_status')
+                    ->maxLength(255),
+                Forms\Components\TextInput::make('name')
+                    ->required()
+                    ->maxLength(255),
+                Forms\Components\TextInput::make('upc')
+                    ->label('UPC')
+                    ->maxLength(255),
+                Forms\Components\Select::make('condition')
                     ->options([
-                        'default' => 'Default',
-                        'queue' => 'Queue',
-                        'catalog' => 'Catalog'
+                        'new' => 'New',
+                        'used' => 'Used',
+                        'refurbished' => 'Refurbished'
                     ])
+                    ->default('new'),
+                Forms\Components\TextInput::make('part_number')
+                    ->label('Part Number')
+                    ->maxLength(255),
+                Forms\Components\TextInput::make('price')
+                    ->required()
+                    ->numeric()
+                    ->prefix('$'),
+                Forms\Components\TextInput::make('final_price')
+                    ->label('List Price')
+                    ->disabled()
+                    ->dehydrated(false)
+                    ->numeric()
+                    ->prefix('$'),
+                Forms\Components\TextInput::make('stock')
+                    ->required()
+                    ->numeric(),
+                Forms\Components\Select::make('catalog_status')
+                    ->options([
+                        ConnectionPairProduct::STATUS_DEFAULT => 'Default',
+                        ConnectionPairProduct::STATUS_QUEUED => 'Queued',
+                        ConnectionPairProduct::STATUS_IN_CATALOG => 'In Catalog',
+                    ])
+                    ->default(ConnectionPairProduct::STATUS_DEFAULT)
                     ->required(),
-
-                Select::make('price_override_type')
-                    ->label('Price Override Type')
+                Forms\Components\Select::make('price_override_type')
                     ->options([
                         'none' => 'No Override',
-                        'flat' => 'Flat Amount',
-                        'percentage' => 'Percentage Markup',
-                        'tiered' => 'Tiered Pricing'
+                        'fixed' => 'Fixed Price',
+                        'percentage' => 'Percentage Markup'
                     ])
-                    ->reactive()
-                    ->afterStateUpdated(fn ($state, callable $set) => $set('price_override', null))
-                    ->default('none'),
-
-                TextInput::make('price_override')
-                    ->label('Price Override')
+                    ->default('none')
+                    ->reactive(),
+                Forms\Components\TextInput::make('price_override')
                     ->numeric()
-                    ->prefix(fn (callable $get) => $get('price_override_type') === 'percentage' ? '%' : '$')
-                    ->suffix(fn (callable $get) => $get('price_override_type') === 'percentage' ? ' markup' : '')
-                    ->hint('Enter override value based on selected type')
-                    ->placeholder(fn (callable $get) => match ($get('price_override_type')) {
-                        'flat' => 'Enter fixed price',
-                        'percentage' => 'Enter markup percentage',
-                        default => 'No override'
-                    })
-                    ->hidden(fn (callable $get) => $get('price_override_type') === 'none')
-                    ->disabled(fn (callable $get) => $get('price_override_type') === 'none'),
-
-                Repeater::make('tiered_pricing')
-                    ->schema([
-                        TextInput::make('min_quantity')
-                            ->numeric()
-                            ->required()
-                            ->label('Minimum Quantity'),
-                        
-                        Select::make('price_type')
-                            ->options([
-                                'flat' => 'Flat Amount',
-                                'percentage' => 'Percentage Markup'
-                            ])
-                            ->required()
-                            ->reactive(),
-                            
-                        TextInput::make('price_value')
-                            ->numeric()
-                            ->required()
-                            ->prefix(fn (callable $get) => $get('price_type') === 'percentage' ? '%' : '$')
-                            ->label('Price Value')
-                    ])
-                    ->columns(3)
-                    ->hidden(fn (callable $get) => $get('price_override_type') !== 'tiered')
-                    ->label('Tiered Pricing Rules'),
+                    ->prefix('$')
+                    ->visible(fn (callable $get) => $get('price_override_type') !== 'none'),
             ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->defaultPaginationPageOption(25)
+            ->persistFiltersInSession()
+            ->persistSortInSession()
+            ->description(function($livewire) {
+                $connectionPairId = request()->query('connection_pair_id');
+                if (!$connectionPairId) return null;
+                
+                $connectionPair = \App\Models\ConnectionPair::with(['supplier', 'destination'])->find($connectionPairId);
+                if (!$connectionPair) return null;
+
+                return new \Illuminate\Support\HtmlString(view('filament.components.connection-pair-header', [
+                    'supplier' => $connectionPair->supplier->name,
+                    'destination' => $connectionPair->destination->name,
+                ])->render());
+            })
             ->headerActions([
-                Tables\Actions\Action::make('exportTemplate')
+                
+                \Filament\Tables\Actions\Action::make('downloadTemplate')
                     ->label('Download Template')
-                    ->icon('heroicon-o-document-arrow-down')
-                    ->action(function () {
-                        $headers = [
-                            'sku',
-                            'catalog_status',
-                            'price_override_type',
-                            'price_override'
-                        ];
-                        
-                        $csvContent = implode(',', $headers) . "\n";
-                        $csvContent .= "example-sku,default,none,\n";
-                        
-                        return response()->streamDownload(function () use ($csvContent) {
-                            echo $csvContent;
-                        }, 'connection-pair-products-template.csv', [
-                            'Content-Type' => 'text/csv',
-                        ]);
-                    }),
-                    
-                Tables\Actions\Action::make('importProducts')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->url(storage_path('app/public/connection_pair_products_template.csv'))
+                    ->openUrlInNewTab(),
+                \Filament\Tables\Actions\Action::make('import')
                     ->label('Import from CSV')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->form([
-                        FileUpload::make('csv_file')
+                        Forms\Components\FileUpload::make('csv')
                             ->label('CSV File')
                             ->acceptedFileTypes(['text/csv'])
-                            ->required()
-                            ->disk('local')
+                            ->required(),
                     ])
-                    ->action(function (array $data) {
-                        $connectionPairId = request()->get('tableFilters')['connection_pair'];
-                        $connectionPair = ConnectionPair::find($connectionPairId);
-                        
-                        $path = Storage::disk('local')->path($data['csv_file']);
-                        $csv = Reader::createFromPath($path);
-                        $csv->setHeaderOffset(0);
-                        
-                        $records = $csv->getRecords();
-                        
-                        foreach ($records as $record) {
-                            $product = Product::where('sku', $record['sku'])
-                                ->where('supplier_id', $connectionPair->supplier_id)
-                                ->first();
-                                
-                            if ($product) {
-                                $product->connectionPairs()->syncWithoutDetaching([
-                                    $connectionPairId => [
-                                        'catalog_status' => $record['catalog_status'] ?? 'default',
-                                        'price_override_type' => $record['price_override_type'] ?? 'none',
-                                        'price_override' => $record['price_override'] ?? null
-                                    ]
-                                ]);
-                            }
+                    ->action(function (array $data, $livewire) {
+                        $connectionPairId = request()->query('connection_pair_id');
+                        if (!$connectionPairId) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Error')
+                                ->body('Connection pair ID is required.')
+                                ->send();
+                            return;
                         }
-                        
-                        Storage::disk('local')->delete($data['csv_file']);
-                    }),
-                    
-                Tables\Actions\Action::make('exportProducts')
-                    ->label('Export to CSV')
-                    ->icon('heroicon-o-document-arrow-down')
-                    ->action(function () {
-                        $connectionPairId = request()->get('tableFilters')['connection_pair'];
-                        $connectionPair = ConnectionPair::find($connectionPairId);
-                        
-                        $products = Product::where('supplier_id', $connectionPair->supplier_id)
-                            ->whereHas('connectionPairs', function ($query) use ($connectionPairId) {
-                                $query->where('connection_pair_id', $connectionPairId);
-                            })
-                            ->with(['connectionPairs' => function ($query) use ($connectionPairId) {
-                                $query->where('connection_pair_id', $connectionPairId);
-                            }])
-                            ->get();
-                        
-                        $csvContent = "sku,catalog_status,price_override_type,price_override\n";
-                        
-                        foreach ($products as $product) {
-                            $pivot = $product->connectionPairs->first()->pivot;
-                            $csvContent .= implode(',', [
-                                $product->sku,
-                                $pivot->catalog_status ?? 'default',
-                                $pivot->price_override_type ?? 'none',
-                                $pivot->price_override ?? ''
-                            ]) . "\n";
-                        }
-                        
-                        return response()->streamDownload(function () use ($csvContent) {
-                            echo $csvContent;
-                        }, 'connection-pair-products.csv', [
-                            'Content-Type' => 'text/csv',
+
+                        // Store the uploaded file
+                        $path = storage_path('app/public/' . $data['csv']);
+
+                        // Run the import command
+                        $command = new \App\Console\Commands\ImportConnectionPairProducts(app());
+                        $exitCode = $command->handle([
+                            'connection_pair_id' => $connectionPairId,
+                            'csv' => $path,
                         ]);
+
+                        if ($exitCode === 0) {
+                            Notification::make()
+                                ->success()
+                                ->title('Import Completed')
+                                ->body('Products have been imported successfully.')
+                                ->send();
+                        } else {
+                            Notification::make()
+                                ->danger()
+                                ->title('Import Failed')
+                                ->body('Failed to import products. Check the logs for details.')
+                                ->send();
+                        }
+
+                        // Clean up the uploaded file
+                        if (file_exists($path)) {
+                            unlink($path);
+                        }
                     })
             ])
             ->columns([
-                TextColumn::make('name')
+                Tables\Columns\TextColumn::make('sku')
                     ->searchable()
                     ->sortable(),
-
-                TextColumn::make('sku')
+                Tables\Columns\TextColumn::make('upc')
+                    ->label('UPC')
                     ->searchable()
                     ->sortable(),
-
-                TextColumn::make('price')
-                    ->money('USD')
+                Tables\Columns\TextColumn::make('product.name')
+                    ->label('Product Name')
+                    ->searchable()
                     ->sortable(),
-
-                TextColumn::make('connectionPairs.pivot.price_override')
-                    ->label('Override Price')
-                    ->money('USD')
-                    ->default('-'),
-
-                TextColumn::make('connectionPairs.pivot.catalog_status')
-                    ->label('Catalog Status')
+                Tables\Columns\TextColumn::make('condition')
                     ->badge()
-                    ->color(fn ($state): string => match ($state ?? 'default') {
-                        'catalog' => 'success',
-                        'queue' => 'warning',
-                        'default' => 'secondary',
-                        default => 'secondary',
-                    }),
-
-                TextColumn::make('updated_at')
-                    ->dateTime()
+                    ->colors([
+                        'primary' => 'new',
+                        'warning' => 'used',
+                        'danger' => 'refurbished',
+                    ])
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('part_number')
+                    ->label('Part Number')
+                    ->searchable()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
+                Tables\Columns\TextColumn::make('price')
+                    ->money()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('final_price')
+                    ->label('List Price')
+                    ->money()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('stock')
+                    ->numeric()
+                    ->sortable(),
+                Tables\Columns\BadgeColumn::make('catalog_status')
+                    ->colors([
+                        'warning' => ConnectionPairProduct::STATUS_DEFAULT,
+                        'primary' => ConnectionPairProduct::STATUS_QUEUED,
+                        'success' => ConnectionPairProduct::STATUS_IN_CATALOG,
+                    ]),
+                Tables\Columns\TextColumn::make('price_override')
+                    ->money()
+                    ->sortable()
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
+                Tables\Columns\BadgeColumn::make('price_override_type')
+                    ->colors([
+                        'danger' => 'none',
+                        'warning' => 'fixed',
+                        'success' => 'percentage',
+                    ])
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('connection_pair')
-                    ->relationship('connectionPairs', 'id')
-                    ->label('Connection Pair')
-                    ->multiple()
-                    ->preload(),
-
-                Tables\Filters\SelectFilter::make('catalog_status')
+                SelectFilter::make('catalog_status')
                     ->options([
-                        'default' => 'Default',
-                        'queue' => 'Queue',
-                        'catalog' => 'Catalog'
-                    ])
+                        ConnectionPairProduct::STATUS_DEFAULT => 'Default',
+                        ConnectionPairProduct::STATUS_QUEUED => 'Queued',
+                        ConnectionPairProduct::STATUS_IN_CATALOG => 'In Catalog',
+                    ]),
+                SelectFilter::make('price_override_type')
+                    ->options([
+                        'none' => 'No Override',
+                        'fixed' => 'Fixed Price',
+                        'percentage' => 'Percentage Markup'
+                    ]),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkAction::make('updateStatus')
-                    ->label('Update Status')
-                    ->form([
-                        Select::make('catalog_status')
-                            ->label('Catalog Status')
-                            ->options([
-                                'default' => 'Default',
-                                'queue' => 'Queue',
-                                'catalog' => 'Catalog'
-                            ])
-                            ->required()
-                    ])
-                    ->action(function (Collection $records, array $data) {
-                        foreach ($records as $record) {
-                            $record->connectionPairs()->updateExistingPivot(
-                                request()->get('tableFilters')['connection_pair'],
-                                ['catalog_status' => $data['catalog_status']]
-                            );
-                        }
-                    })
-                    ->deselectRecordsAfterCompletion()
+                Tables\Actions\Action::make('queue')
+                    ->action(fn (ConnectionPairProduct $record) => $record->update(['catalog_status' => ConnectionPairProduct::STATUS_QUEUED]))
+                    ->requiresConfirmation()
+                    ->visible(fn (ConnectionPairProduct $record) => $record->catalog_status === ConnectionPairProduct::STATUS_DEFAULT)
+                    ->color('primary')
+                    ->icon('heroicon-o-queue-list'),
+                Tables\Actions\Action::make('move_to_catalog')
+                    ->action(fn (ConnectionPairProduct $record) => $record->update(['catalog_status' => ConnectionPairProduct::STATUS_IN_CATALOG]))
+                    ->requiresConfirmation()
+                    ->visible(fn (ConnectionPairProduct $record) => $record->catalog_status === ConnectionPairProduct::STATUS_QUEUED)
                     ->color('success')
                     ->icon('heroicon-o-check'),
-
-                Tables\Actions\BulkAction::make('updatePricing')
-                    ->label('Update Pricing')
-                    ->form([
-                        Select::make('price_override_type')
-                            ->label('Price Override Type')
-                            ->options([
-                                'none' => 'No Override',
-                                'flat' => 'Flat Amount',
-                                'percentage' => 'Percentage Markup'
-                            ])
-                            ->required()
-                            ->reactive(),
-
-                        TextInput::make('price_override')
-                            ->label('Price Override Value')
-                            ->numeric()
-                            ->prefix(fn (callable $get) => $get('price_override_type') === 'percentage' ? '%' : '$')
-                            ->suffix(fn (callable $get) => $get('price_override_type') === 'percentage' ? ' markup' : '')
-                            ->required()
-                            ->hidden(fn (callable $get) => $get('price_override_type') === 'none')
-                    ])
-                    ->action(function (Collection $records, array $data) {
-                        foreach ($records as $record) {
-                            $record->connectionPairs()->updateExistingPivot(
-                                request()->get('tableFilters')['connection_pair'],
-                                [
-                                    'price_override_type' => $data['price_override_type'],
-                                    'price_override' => $data['price_override_type'] === 'none' ? null : $data['price_override']
-                                ]
-                            );
-                        }
-                    })
-                    ->deselectRecordsAfterCompletion()
-                    ->color('warning')
-                    ->icon('heroicon-o-currency-dollar'),
-
-                Tables\Actions\BulkAction::make('addToQueue')
-                    ->label('Add to Queue')
-                    ->action(function (Collection $records) {
-                        foreach ($records as $record) {
-                            $record->connectionPairs()->updateExistingPivot(
-                                request()->get('tableFilters')['connection_pair'],
-                                ['catalog_status' => 'queue']
-                            );
-                        }
-                    })
-                    ->deselectRecordsAfterCompletion()
-                    ->color('warning')
-                    ->icon('heroicon-o-clock'),
-
-                Tables\Actions\BulkAction::make('addToCatalog')
-                    ->label('Add to Catalog')
-                    ->action(function (Collection $records) {
-                        foreach ($records as $record) {
-                            $record->connectionPairs()->updateExistingPivot(
-                                request()->get('tableFilters')['connection_pair'],
-                                ['catalog_status' => 'catalog']
-                            );
-                        }
-                    })
-                    ->deselectRecordsAfterCompletion()
-                    ->color('success')
-                    ->icon('heroicon-o-check-circle'),
-
-
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('queue_selected')
+                        ->action(fn (Collection $records) => $records->each->update(['catalog_status' => ConnectionPairProduct::STATUS_QUEUED]))
+                        ->requiresConfirmation()
+                        ->deselectRecordsAfterCompletion()
+                        ->label('Queue Selected')
+                        ->color('primary')
+                        ->icon('heroicon-o-queue-list'),
+                    Tables\Actions\BulkAction::make('move_to_catalog')
+                        ->action(fn (Collection $records) => $records->each->update(['catalog_status' => ConnectionPairProduct::STATUS_IN_CATALOG]))
+                        ->requiresConfirmation()
+                        ->deselectRecordsAfterCompletion()
+                        ->label('Move to Catalog')
+                        ->color('success')
+                        ->icon('heroicon-o-check'),
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
             ]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [];
     }
 
     public static function getPages(): array
@@ -366,5 +286,34 @@ class ConnectionPairProductResource extends Resource
             'create' => Pages\CreateConnectionPairProduct::route('/create'),
             'edit' => Pages\EditConnectionPairProduct::route('/{record}/edit'),
         ];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery()
+            ->with(['connectionPair.supplier', 'connectionPair.destination', 'product']);
+
+        $connectionPairId = request()->query('connection_pair_id');
+
+        // If not in query, try to get it from the route parameter (record)
+        if (!$connectionPairId && request()->route('record')) {
+            $recordId = request()->route('record');
+            $record = \App\Models\ConnectionPairProduct::find($recordId);
+            if ($record) {
+                $connectionPairId = $record->connection_pair_id;
+            }
+        }
+
+        // Only show notification and abort if still not set
+        if (!$connectionPairId) {
+            \Filament\Notifications\Notification::make()
+                ->danger()
+                ->title('Missing Connection Pair')
+                ->body('No connection pair was specified. Please access products from a connection pair context.')
+                ->send();
+            abort(403, 'No connection pair specified.');
+        }
+
+        return $query->where('connection_pair_id', $connectionPairId);
     }
 }

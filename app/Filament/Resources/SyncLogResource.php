@@ -21,7 +21,7 @@ class SyncLogResource extends Resource
     protected static ?string $model = SyncLog::class;
 
     protected static ?string $navigationIcon = 'fluentui-stack-20';
-    protected static ?string $navigationGroup = 'Inventory Management';
+    protected static ?string $navigationGroup = 'Integrations';
     protected static ?int $navigationSort = 4;
 
     public static function form(Form $form): Form
@@ -71,6 +71,7 @@ class SyncLogResource extends Resource
                     'success' => 'success',
                     'failed' => 'danger',
                     'pending' => 'warning',
+                    'running' => 'info',
                 })
                 ->searchable()
                 ->sortable(),
@@ -114,6 +115,7 @@ class SyncLogResource extends Resource
                     'success' => 'Success',
                     'failed' => 'Failed',
                     'pending' => 'Pending',
+                    'running' => 'Running',
                 ]),
             SelectFilter::make('sync_type')
                 ->options([

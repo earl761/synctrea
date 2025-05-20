@@ -12,9 +12,9 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('type'); // e.g., 'ingram_micro', 'other'
-            $table->string('api_key')->nullable();
-            $table->string('api_secret')->nullable();
-            $table->string('api_endpoint')->nullable();
+            $table->text('api_key')->nullable();
+            $table->text('api_secret')->nullable();
+            $table->text('api_endpoint')->nullable();
             $table->json('credentials')->nullable(); // Store additional API credentials
             $table->json('settings')->nullable(); // Store supplier-specific settings
             $table->boolean('is_active')->default(true);

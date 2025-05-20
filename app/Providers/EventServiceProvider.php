@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Models\ConnectionPairProduct;
+use App\Observers\ConnectionPairProductObserver;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -28,6 +30,7 @@ class EventServiceProvider extends ServiceProvider
         // Register model observers
         \App\Models\Product::observe(\App\Observers\ProductObserver::class);
         \App\Models\PricingRule::observe(\App\Observers\PricingRuleObserver::class);
+        \App\Models\ConnectionPairProduct::observe(\App\Observers\ConnectionPairProductObserver::class);
 
         // Register price update listener for specific model events
         Event::listen('eloquent.saved: *', \App\Listeners\PriceUpdateListener::class);

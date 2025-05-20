@@ -23,165 +23,120 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
+use Filament\Forms\Components\Card;
+use Filament\Forms\Components\Grid;
+use Filament\Forms\Components\TextInput;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 class UserResource extends Resource
 {
     protected static ?string $model = User::class;
     protected static int $globalSearchResultsLimit = 20;
 
-    protected static ?int $navigationSort = -1;
-    protected static ?string $navigationIcon = 'heroicon-s-users';
+    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationIcon = 'heroicon-o-users';
+    protected static ?string $navigationGroup = 'Administration';
 
     protected static ?string $recordTitleAttribute = 'name';
 
     public static function form(Form $form): Form
     {
-        return $form
-            ->schema([
-                Forms\Components\Group::make()
-                    ->schema([
-                        SpatieMediaLibraryFileUpload::make('media')
-                            ->hiddenLabel()
-                            ->avatar()
-                            ->collection('avatars')
-                            ->alignCenter()
-                            ->columnSpanFull(),
+        /** @var User $user */
+        $user = Auth::user();
 
-                        Forms\Components\Actions::make([
-                            Action::make('resend_verification')
-                                ->label(__('resource.user.actions.resend_verification'))
-                                ->color('info')
-                                ->action(fn(MailSettings $settings, Model $record) => static::doResendEmailVerification($settings, $record)),
-                        ])
-                            // ->hidden(fn (User $user) => $user->email_verified_at != null)
-                            ->hiddenOn('create')
-                            ->fullWidth(),
+        return $form->schema([
+            Card::make()
+                ->schema([
+                    Grid::make(2)
+                        ->schema([
+                            Select::make('company_id')
+                                ->relationship('company', 'name')
+                                ->required()
+                                ->visible(fn () => $user->isSuperAdmin())
+                                ->searchable()
+                                ->preload(),
 
-                        Forms\Components\Section::make()
-                            ->schema([
-                                Forms\Components\TextInput::make('password')
-                                    ->password()
-                                    ->dehydrateStateUsing(fn(string $state): string => Hash::make($state))
-                                    ->dehydrated(fn(?string $state): bool => filled($state))
-                                    ->revealable()
-                                    ->required(),
-                                Forms\Components\TextInput::make('passwordConfirmation')
-                                    ->password()
-                                    ->dehydrateStateUsing(fn(string $state): string => Hash::make($state))
-                                    ->dehydrated(fn(?string $state): bool => filled($state))
-                                    ->revealable()
-                                    ->same('password')
-                                    ->required(),
-                            ])
-                            ->compact()
-                            ->hidden(fn(string $operation): bool => $operation === 'edit'),
+                            TextInput::make('username')
+                                ->required()
+                                ->maxLength(255),
 
-                        Forms\Components\Section::make()
-                            ->schema([
-                                Forms\Components\Placeholder::make('email_verified_at')
-                                    ->label(__('resource.general.email_verified_at'))
-                                    ->content(fn(User $record): ?string => new HtmlString("$record->email_verified_at")),
-                                Forms\Components\Placeholder::make('created_at')
-                                    ->label(__('resource.general.created_at'))
-                                    ->content(fn(User $record): ?string => $record->created_at?->diffForHumans()),
-                                Forms\Components\Placeholder::make('updated_at')
-                                    ->label(__('resource.general.updated_at'))
-                                    ->content(fn(User $record): ?string => $record->updated_at?->diffForHumans()),
-                            ])
-                            ->compact()
-                            ->hidden(fn(string $operation): bool => $operation === 'create'),
-                    ])
-                    ->columnSpan(1),
+                            TextInput::make('email')
+                                ->email()
+                                ->required()
+                                ->maxLength(255),
 
-                Forms\Components\Tabs::make()
-                    ->schema([
-                        Forms\Components\Tabs\Tab::make('Details')
-                            ->icon('heroicon-o-information-circle')
-                            ->schema([
-                                Forms\Components\TextInput::make('username')
-                                    ->required()
-                                    ->maxLength(255)
-                                    ->live()
-                                    ->rules(function ($record) {
-                                        $userId = $record?->id;
-                                        return $userId
-                                            ? ['unique:users,username,' . $userId]
-                                            : ['unique:users,username'];
-                                    }),
+                            TextInput::make('firstname')
+                                ->required()
+                                ->maxLength(255),
 
-                                Forms\Components\TextInput::make('email')
-                                    ->email()
-                                    ->required()
-                                    ->maxLength(255)
-                                    ->rules(function ($record) {
-                                        $userId = $record?->id;
-                                        return $userId
-                                            ? ['unique:users,email,' . $userId]
-                                            : ['unique:users,email'];
-                                    }),
+                            TextInput::make('lastname')
+                                ->required()
+                                ->maxLength(255),
 
-                                Forms\Components\TextInput::make('firstname')
-                                    ->required()
-                                    ->maxLength(255),
+                            TextInput::make('password')
+                                ->password()
+                                ->dehydrateStateUsing(fn ($state) => Hash::make($state))
+                                ->dehydrated(fn ($state) => filled($state))
+                                ->required(fn (string $context): bool => $context === 'create'),
 
-                                Forms\Components\TextInput::make('lastname')
-                                    ->required()
-                                    ->maxLength(255),
-                            ])
-                            ->columns(2),
-
-                        Forms\Components\Tabs\Tab::make('Roles')
-                            ->icon('fluentui-shield-task-48')
-                            ->schema([
-                                Select::make('roles')
-                                    ->hiddenLabel()
-                                    ->relationship('roles', 'name')
-                                    ->getOptionLabelFromRecordUsing(fn(Model $record) => Str::headline($record->name))
-                                    ->multiple()
-                                    ->preload()
-                                    ->searchable()
-                                    ->optionsLimit(5)
-                                    ->columnSpanFull(),
-                            ])
-                    ])
-                    ->columnSpan([
-                        'sm' => 1,
-                        'lg' => 2
-                    ]),
-            ])
-            ->columns(3);
+                            Select::make('roles')
+                                ->multiple()
+                                ->relationship('roles', 'name')
+                                ->preload()
+                                ->searchable(),
+                        ]),
+                ])
+        ]);
     }
 
-    public static function table(Table $table): Table
+    public static function table(Tables\Table $table): Tables\Table
     {
+        /** @var User $user */
+        $user = Auth::user();
+
         return $table
             ->columns([
-                SpatieMediaLibraryImageColumn::make('media')->label('Avatar')
-                    ->collection('avatars')
-                    ->wrap(),
-                Tables\Columns\TextColumn::make('username')->label('Username')
-                    ->description(fn(Model $record) => $record->firstname . ' ' . $record->lastname)
+                TextColumn::make('company.name')
+                    ->label('Company')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: !$user->isSuperAdmin()),
+
+                TextColumn::make('username')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('roles.name')->label('Role')
-                    ->formatStateUsing(fn($state): string => Str::headline($state))
-                    ->colors(['info'])
+
+                TextColumn::make('email')
+                    ->searchable(),
+
+                TextColumn::make('firstname')
+                    ->searchable(),
+
+                TextColumn::make('lastname')
+                    ->searchable(),
+
+                TextColumn::make('roles.name')
                     ->badge(),
-                Tables\Columns\TextColumn::make('email')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('email_verified_at')->label('Verified at')
-                    ->dateTime()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('created_at')
+
+                TextColumn::make('email_verified_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('updated_at')
+
+                TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                SelectFilter::make('company')
+                    ->relationship('company', 'name')
+                    ->visible(fn () => $user->isSuperAdmin()),
+
+                SelectFilter::make('roles')
+                    ->relationship('roles', 'name'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -260,5 +215,19 @@ class UserResource extends Resource
                 ->warning()
                 ->send();
         }
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        /** @var User $user */
+        $user = Auth::user();
+
+        if (!$user->isSuperAdmin()) {
+            $query->where('company_id', $user->company_id);
+        }
+
+        return $query;
     }
 }

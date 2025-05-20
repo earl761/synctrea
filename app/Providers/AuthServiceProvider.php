@@ -13,6 +13,12 @@ use App\Policies\ExceptionPolicy;
 use BezhanSalleh\FilamentExceptions\Models\Exception;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Spatie\Activitylog\Models\Activity;
+use App\Models\Company;
+use App\Models\ConnectionPair;
+use App\Models\PricingRule;
+use App\Policies\CompanyPolicy;
+use App\Policies\ConnectionPairPolicy;
+use App\Policies\PricingRulePolicy;
 
 class AuthServiceProvider extends ServiceProvider
 {
@@ -27,6 +33,9 @@ class AuthServiceProvider extends ServiceProvider
         BlogPost::class => BlogPostPolicy::class,
         Exception::class => ExceptionPolicy::class,
         'Spatie\Permission\Models\Role' => 'App\Policies\RolePolicy',
+        Company::class => CompanyPolicy::class,
+        ConnectionPair::class => ConnectionPairPolicy::class,
+        PricingRule::class => PricingRulePolicy::class,
     ];
 
     /**
@@ -34,6 +43,6 @@ class AuthServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        $this->registerPolicies();
     }
 }

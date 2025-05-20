@@ -6,6 +6,32 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Stichoza\GoogleTranslate\GoogleTranslate;
 
+/**
+ * GenerateLang Command
+ * 
+ * This command automates the translation of language files using Google Translate.
+ * It can handle both JSON and array-based language files.
+ * 
+ * Database Interactions:
+ * - None (File system operations only)
+ * 
+ * File Operations:
+ * - Reads from lang/{source-lang}/ directory
+ * - Creates/Updates files in lang/{target-lang}/ directory
+ * - Handles both array-based PHP files and JSON translation files
+ * 
+ * Example Usage:
+ * ```
+ * # Translate all files from English to Spanish and French
+ * php artisan superduper:lang-translate en es fr
+ * 
+ * # Translate only JSON file
+ * php artisan superduper:lang-translate en es fr --json
+ * 
+ * # Translate specific file
+ * php artisan superduper:lang-translate en es fr --file=messages.php
+ * ```
+ */
 class GenerateLang extends Command
 {
     protected $signature = 'superduper:lang-translate {from} {to*} {--file=} {--json}';

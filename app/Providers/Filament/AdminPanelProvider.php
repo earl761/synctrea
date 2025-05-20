@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\Pages\Auth\EmailVerification;
 use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\Auth\RequestPasswordReset;
+use App\Filament\Pages\Auth\Register;
 use App\Filament\Resources\MenuResource;
 use App\Http\Middleware\FilamentRobotsMiddleware;
 use App\Livewire\MyProfileExtended;
@@ -25,6 +26,7 @@ use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Filament\Facades\Filament;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -35,6 +37,7 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login(Login::class)
+            ->registration(Register::class)
             ->passwordReset(RequestPasswordReset::class)
             ->emailVerification(EmailVerification::class)
             ->favicon(fn (GeneralSettings $settings) => Storage::url($settings->site_favicon))
@@ -64,7 +67,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->navigationItems([
                 Navigation\NavigationItem::make('Log Viewer') // !! To-Do: lang
-                    ->visible(fn(): bool => auth()->user()->can('access_log_viewer'))
+                    ->visible(fn(): bool => Filament::auth()->user()?->isSuperAdmin())
                     ->url(config('app.url').'/'.config('log-viewer.route_path'), shouldOpenInNewTab: true)
                     ->icon('fluentui-document-bullet-list-multiple-20-o')
                     ->group(__('menu.nav_group.activities'))

@@ -14,4 +14,10 @@ class MenuResource extends BaseMenuResource
     {
         return __("menu.nav_group.sites");
     }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        $user = \Filament\Facades\Filament::auth()->user();
+        return $user instanceof \App\Models\User && $user->isSuperAdmin();
+    }
 }

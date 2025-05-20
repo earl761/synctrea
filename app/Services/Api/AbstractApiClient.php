@@ -49,17 +49,12 @@ abstract class AbstractApiClient implements ApiClient
             $endTime = microtime(true);
             $executionTime = round($endTime - $startTime, 2);
 
-            if ($response->failed()) {
-                Log::error('API request failed', [
-                    'url' => $url,
-                    'method' => $method,
-                    'status' => $response->status(),
-                    'execution_time' => $executionTime,
-                    'response' => $response->body()
-                ]);
+            if (!$response->successful()) {
+                Log::error('Full API error response: ' . $response->body());
                 throw new ApiException(
                     'API request failed: ' . $response->body(),
-                    $response->status()
+                    $response->status(),
+                    ['response' => $response->json()]
                 );
             }
 
@@ -82,8 +77,8 @@ abstract class AbstractApiClient implements ApiClient
 
             throw new ApiException(
                 'API request failed: ' . $e->getMessage(),
-                $e->getCode(),
-                $e
+                $e->getCode() ?: 500,
+                ['error' => $e->getMessage()]
             );
         }
     }

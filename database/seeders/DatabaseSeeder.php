@@ -20,6 +20,9 @@ class DatabaseSeeder extends Seeder
             BlogCategoriesTableSeeder::class,
             BlogPostsTableSeeder::class,
             ContactUsTableSeeder::class,
+            ConnectionPairPermissionsSeeder::class,
+            UpdateConnectionPairsCompanySeeder::class,
+            SubscriptionPackagesSeeder::class,
         ]);
     }
 }

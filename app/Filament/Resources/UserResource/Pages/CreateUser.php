@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\UserResource\Pages;
 
 use App\Filament\Resources\UserResource;
+use App\Notifications\WelcomeNotification;
 use App\Settings\MailSettings;
 use Exception;
 use Filament\Facades\Filament;
@@ -31,13 +32,17 @@ class CreateUser extends CreateRecord
         }
 
         if ($settings->isMailSettingsConfigured()) {
-            $notification = new VerifyEmail();
-            $notification->url = Filament::getVerifyEmailUrl($user);
+            // Send email verification notification
+            $verifyNotification = new VerifyEmail();
+            $verifyNotification->url = Filament::getVerifyEmailUrl($user);
+            
+            // Send welcome notification
+            $welcomeNotification = new WelcomeNotification();
 
             $settings->loadMailSettingsToConfig();
 
-            $user->notify($notification);
-
+            $user->notify($verifyNotification);
+            $user->notify($welcomeNotification);
 
             Notification::make()
                 ->title(__('resource.user.notifications.verify_sent.title'))

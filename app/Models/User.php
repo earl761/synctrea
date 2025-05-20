@@ -35,6 +35,7 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
         'firstname',
         'lastname',
         'password',
+        'company_id'  // Add this line
     ];
 
     /**
@@ -92,5 +93,29 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail, Has
         $this->addMediaConversion('thumb')
             ->fit(Fit::Contain, 300, 300)
             ->nonQueued();
+    }
+
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
+    }
+
+    public function hasActiveSubscription(): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        return $this->company && $this->company->isSubscriptionActive();
+    }
+
+    public function isCompanyAdmin(): bool
+    {
+        return $this->hasRole('company_admin');
+    }
+
+    public function isCompanyUser(): bool
+    {
+        return $this->company_id !== null;
     }
 }

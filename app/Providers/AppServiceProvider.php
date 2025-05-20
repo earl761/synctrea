@@ -8,6 +8,11 @@ use Filament\View\PanelsRenderHook;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\ServiceProvider;
 use Opcodes\LogViewer\Facades\LogViewer;
+use App\Models\Product;
+use App\Observers\ProductObserver;
+use App\Models\Company;
+use App\Observers\CompanySubscriptionObserver;
+use Illuminate\Database\Eloquent\Model;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -24,6 +29,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Model::shouldBeStrict(!$this->app->isProduction());
+
         Table::configureUsing(function (Table $table): void {
             $table
                 ->emptyStateHeading('No data yet')
@@ -48,5 +55,8 @@ class AppServiceProvider extends ServiceProvider
             PanelsRenderHook::USER_MENU_BEFORE,
             fn (): View => view('filament.components.button-website'),
         );
+
+        Product::observe(ProductObserver::class);
+        Company::observe(CompanySubscriptionObserver::class);
     }
 }

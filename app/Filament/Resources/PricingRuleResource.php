@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\PricingRuleResource\Pages;
 use App\Models\PricingRule;
+use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -11,106 +12,145 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder;
+use Filament\Forms\Components\Card;
+use Filament\Forms\Components\Grid;
+use Filament\Forms\Components\Select;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Illuminate\Support\Facades\Auth;
+use Filament\Forms\Components\Hidden;
 
 class PricingRuleResource extends Resource
 {
     protected static ?string $model = PricingRule::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-currency-dollar';
-    protected static ?string $navigationGroup = 'Marketplace';
+    protected static ?string $navigationGroup = 'Pricing';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        // Allow any authenticated user to see Pricing Rules in the navigation
+        return (bool) \Auth::user();
+    }
 
     public static function form(Form $form): Form
     {
+        $user = Auth::user();
+
+        // Guard: If no user, or if non-super admin and no company, return empty schema
+        if (!$user || (!$user->isSuperAdmin() && !$user->company_id)) {
+            return $form->schema([]);
+        }
+
         return $form
             ->schema([
-                Forms\Components\Card::make()
+                Card::make()
                     ->schema([
-                        Forms\Components\TextInput::make('name')
-                            ->required()
-                            ->maxLength(255),
-
-                        Forms\Components\Select::make('type')
-                            ->options([
-                                'global_connection' => 'Global Connection Rule',
-                                'product_specific' => 'Product-Specific Rule',
-                            ])
-                            ->required()
-                            ->reactive()
-                            ->afterStateUpdated(fn ($state, callable $set) => $set('product_id', null)),
-
-                        Forms\Components\Select::make('supplier_id')
-                            ->relationship('supplier', 'name')
-                            ->required(),
-
-                        Forms\Components\Select::make('destination_id')
-                            ->relationship('destination', 'name')
-                            ->required(),
-
-                        Forms\Components\Select::make('product_id')
-                            ->relationship('product', 'name')
-                            ->visible(fn (callable $get) => $get('type') === 'product_specific')
-                            ->required(fn (callable $get) => $get('type') === 'product_specific'),
-
-                        Forms\Components\Select::make('rule_type')
-                            ->options([
-                                'percentage_markup' => 'Percentage Markup',
-                                'flat_markup' => 'Flat Markup',
-                                'tiered' => 'Tiered Pricing',
-                                'percentage_amount' => 'Percentage + Amount',
-                                'amount_percentage' => 'Amount + Percentage',
-                            ])
-                            ->required()
-                            ->reactive(),
-
-                        Forms\Components\TextInput::make('value')
-                            ->numeric()
-                            ->visible(fn (callable $get) => in_array($get('rule_type'), ['percentage_markup', 'flat_markup']))
-                            ->required(fn (callable $get) => in_array($get('rule_type'), ['percentage_markup', 'flat_markup']))
-                            ->label(fn (callable $get) => $get('rule_type') === 'percentage_markup' ? 'Percentage (%)' : 'Amount'),
-
-                        Forms\Components\TextInput::make('percentage_value')
-                            ->numeric()
-                            ->visible(fn (callable $get) => in_array($get('rule_type'), ['percentage_amount', 'amount_percentage']))
-                            ->required(fn (callable $get) => in_array($get('rule_type'), ['percentage_amount', 'amount_percentage']))
-                            ->label('Percentage (%)'),
-
-                        Forms\Components\TextInput::make('amount_value')
-                            ->numeric()
-                            ->visible(fn (callable $get) => in_array($get('rule_type'), ['percentage_amount', 'amount_percentage']))
-                            ->required(fn (callable $get) => in_array($get('rule_type'), ['percentage_amount', 'amount_percentage']))
-                            ->label('Amount'),
-
-                        Forms\Components\Repeater::make('tiers')
+                        Grid::make(2)
                             ->schema([
-                                Forms\Components\TextInput::make('min_quantity')
-                                    ->numeric()
-                                    ->required(),
+                                Select::make('company_id')
+                                    ->relationship('company', 'name')
+                                    ->required()
+                                    ->visible(fn () => $user->isSuperAdmin())
+                                    ->searchable()
+                                    ->preload(),
+                                Hidden::make('company_id')
+                                    ->default($user->company_id)
+                                    ->visible(fn () => !$user->isSuperAdmin()),
+
+                                Forms\Components\TextInput::make('name')
+                                    ->required()
+                                    ->maxLength(255),
+
                                 Forms\Components\Select::make('type')
                                     ->options([
-                                        'percentage' => 'Percentage',
-                                        'fixed' => 'Fixed Amount',
+                                        'global_connection' => 'Global Connection Rule',
+                                        'product_specific' => 'Product-Specific Rule',
                                     ])
-                                    ->required(),
+                                    ->required()
+                                    ->reactive()
+                                    ->afterStateUpdated(fn ($state, callable $set) => $set('product_id', null)),
+
+                                Forms\Components\Select::make('supplier_id')
+                                    ->relationship('supplier', 'name')
+                                    ->required()
+                                    ->searchable()
+                                    ->preload()
+                                    ->visible(fn () => $user->company_id !== null || $user->isSuperAdmin()),
+
+                                Forms\Components\Select::make('destination_id')
+                                    ->relationship('destination', 'name')
+                                    ->required()
+                                    ->searchable()
+                                    ->preload()
+                                    ->visible(fn () => $user->company_id !== null || $user->isSuperAdmin()),
+
+                                Forms\Components\Select::make('product_id')
+                                    ->relationship('product', 'name')
+                                    ->visible(fn (callable $get) => $get('type') === 'product_specific' && ($user->company_id !== null || $user->isSuperAdmin()))
+                                    ->required(fn (callable $get) => $get('type') === 'product_specific' && ($user->company_id !== null || $user->isSuperAdmin())),
+
+                                Forms\Components\Select::make('rule_type')
+                                    ->options([
+                                        'percentage_markup' => 'Percentage Markup',
+                                        'flat_markup' => 'Flat Markup',
+                                        'tiered' => 'Tiered Pricing',
+                                        'percentage_amount' => 'Percentage + Amount',
+                                        'amount_percentage' => 'Amount + Percentage',
+                                    ])
+                                    ->required()
+                                    ->reactive(),
+
                                 Forms\Components\TextInput::make('value')
                                     ->numeric()
+                                    ->visible(fn (callable $get) => in_array($get('rule_type'), ['percentage_markup', 'flat_markup']))
+                                    ->required(fn (callable $get) => in_array($get('rule_type'), ['percentage_markup', 'flat_markup']))
+                                    ->label(fn (callable $get) => $get('rule_type') === 'percentage_markup' ? 'Percentage (%)' : 'Amount'),
+
+                                Forms\Components\TextInput::make('percentage_value')
+                                    ->numeric()
+                                    ->visible(fn (callable $get) => in_array($get('rule_type'), ['percentage_amount', 'amount_percentage']))
+                                    ->required(fn (callable $get) => in_array($get('rule_type'), ['percentage_amount', 'amount_percentage']))
+                                    ->label('Percentage (%)'),
+
+                                Forms\Components\TextInput::make('amount_value')
+                                    ->numeric()
+                                    ->visible(fn (callable $get) => in_array($get('rule_type'), ['percentage_amount', 'amount_percentage']))
+                                    ->required(fn (callable $get) => in_array($get('rule_type'), ['percentage_amount', 'amount_percentage']))
+                                    ->label('Amount'),
+
+                                Forms\Components\Repeater::make('tiers')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('min_quantity')
+                                            ->numeric()
+                                            ->required(),
+                                        Forms\Components\Select::make('type')
+                                            ->options([
+                                                'percentage' => 'Percentage',
+                                                'fixed' => 'Fixed Amount',
+                                            ])
+                                            ->required(),
+                                        Forms\Components\TextInput::make('value')
+                                            ->numeric()
+                                            ->required(),
+                                    ])
+                                    ->visible(fn (callable $get) => $get('rule_type') === 'tiered')
+                                    ->required(fn (callable $get) => $get('rule_type') === 'tiered')
+                                    ->columns(3),
+
+                                Forms\Components\TextInput::make('priority')
+                                    ->numeric()
+                                    ->default(0)
                                     ->required(),
-                            ])
-                            ->visible(fn (callable $get) => $get('rule_type') === 'tiered')
-                            ->required(fn (callable $get) => $get('rule_type') === 'tiered')
-                            ->columns(3),
 
-                        Forms\Components\TextInput::make('priority')
-                            ->numeric()
-                            ->default(0)
-                            ->required(),
+                                Forms\Components\Toggle::make('is_active')
+                                    ->default(true)
+                                    ->required(),
 
-                        Forms\Components\Toggle::make('is_active')
-                            ->default(true)
-                            ->required(),
+                                Forms\Components\DateTimePicker::make('valid_from'),
 
-                        Forms\Components\DateTimePicker::make('valid_from'),
-
-                        Forms\Components\DateTimePicker::make('valid_until'),
+                                Forms\Components\DateTimePicker::make('valid_until'),
+                            ]),
                     ])
                     ->columns(2),
             ]);
@@ -118,8 +158,16 @@ class PricingRuleResource extends Resource
 
     public static function table(Table $table): Table
     {
+        /** @var User $user */
+        $user = Auth::user();
+
         return $table
             ->columns([
+                TextColumn::make('company.name')
+                    ->label('Company')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: !$user->isSuperAdmin()),
                 Tables\Columns\TextColumn::make('name'),
                 Tables\Columns\BadgeColumn::make('type')
                     ->state([
@@ -198,5 +246,19 @@ class PricingRuleResource extends Resource
             'create' => Pages\CreatePricingRule::route('/create'),
             'edit' => Pages\EditPricingRule::route('/{record}/edit'),
         ];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        /** @var User $user */
+        $user = Auth::user();
+
+        if (!$user->isSuperAdmin()) {
+            $query->where('company_id', $user->company_id);
+        }
+
+        return $query->latest();
     }
 }

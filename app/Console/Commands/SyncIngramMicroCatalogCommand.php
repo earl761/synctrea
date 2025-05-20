@@ -23,7 +23,7 @@ class SyncIngramMicroCatalogCommand extends Command
     protected $description = 'Sync products from Ingram Micro catalog';
 
     public function handle(): int
-    {
+    { 
         // Get the supplier first to ensure it exists before creating the sync log
         $supplier = Supplier::where('type', 'ingram_micro')
             ->where('is_active', true)
@@ -38,8 +38,6 @@ class SyncIngramMicroCatalogCommand extends Command
         $syncLog->save();
 
         try {
-            // Supplier is already retrieved above
-
             // Check for recent successful sync unless forced
             if (!$this->option('force')) {
                 $recentSync = SyncLog::where('type', 'ingram_micro_catalog')
@@ -61,6 +59,7 @@ class SyncIngramMicroCatalogCommand extends Command
             $totalProcessed = 0;
             $totalUpdated = 0;
             $totalCreated = 0;
+            $processedSkus = []; // Track SKUs we've seen in the response
 
             $params = [
                 'pageSize' => $pageSize,
@@ -89,7 +88,9 @@ class SyncIngramMicroCatalogCommand extends Command
                     $progressBar = $this->output->createProgressBar($result['recordsFound']);
                 }
 
-                if (empty($result['catalog'])) {
+                // Handle empty responses as completion
+                if (empty($result['catalog']) || ($result['isComplete'] ?? false)) {
+                    $this->info("\nNo more items to process, sync completed successfully.");
                     break;
                 }
 
@@ -106,8 +107,8 @@ class SyncIngramMicroCatalogCommand extends Command
                                 'type' => $item['type'],
                                 'part_number' => $item['vendorPartNumber'],
                                 'authorizedToPurchase' => $item['authorizedToPurchase'] === 'True',
-                                'cost_price' => 0,
-                                'retail_price' => 0,
+                                'cost_price' =>0 ,
+                                'retail_price' =>0 ,
                                 'quantity' => 0,
                                 'description' => $item['extraDescription'] ?? '',
                                 'category' => $item['category'] ?? '',
@@ -121,6 +122,9 @@ class SyncIngramMicroCatalogCommand extends Command
                                 'synced_at' => now(),
                             ]
                         );
+
+                        // Track this SKU as processed
+                        $processedSkus[] = $item['ingramPartNumber'];
 
                         $totalProcessed++;
                         if ($product->wasRecentlyCreated) {
@@ -140,11 +144,28 @@ class SyncIngramMicroCatalogCommand extends Command
                 }
 
                 $pageNumber++;
-            } while (!empty($result['catalog']));
+            } while (true); // Loop will break when isComplete is true or no more items
 
             if ($progressBar) {
                 $progressBar->finish();
                 $this->newLine();
+            }
+
+            // Delete products that weren't in the response
+            $totalDeleted = 0;
+            if (!empty($processedSkus)) {
+                DB::beginTransaction();
+                try {
+                    // Find and delete products not in the response
+                    $totalDeleted = Product::where('supplier_id', $supplier->id)
+                        ->whereNotIn('sku', $processedSkus)
+                        ->delete();
+                    
+                    DB::commit();
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    throw $e;
+                }
             }
 
             $syncLog->update([
@@ -154,14 +175,16 @@ class SyncIngramMicroCatalogCommand extends Command
                     'total_processed' => $totalProcessed,
                     'total_created' => $totalCreated,
                     'total_updated' => $totalUpdated,
+                    'total_deleted' => $totalDeleted,
                 ],
             ]);
 
             $this->info(sprintf(
-                'Sync completed. Processed %d products (%d created, %d updated)',
+                'Sync completed. Processed %d products (%d created, %d updated, %d deleted)',
                 $totalProcessed,
                 $totalCreated,
-                $totalUpdated
+                $totalUpdated,
+                $totalDeleted
             ));
 
             return Command::SUCCESS;

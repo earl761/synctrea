@@ -21,8 +21,23 @@ class IngramMicroApiClient extends AbstractApiClient
     {
         $this->supplier = $supplier;
         $this->baseUrl = $supplier->api_endpoint;
-        $this->apiKey = $supplier->api_key;
-        $this->apiSecret = $supplier->api_secret;
+
+        // Validate that API credentials are set
+        if (empty($supplier->api_key) || empty($supplier->api_secret)) {
+            throw new ApiException('API credentials are not configured for this supplier');
+        }
+
+        try {
+            $this->apiKey = $supplier->api_key;
+            $this->apiSecret = $supplier->api_secret;
+        } catch (\Exception $e) {
+            Log::error('Failed to initialize IngramMicro API credentials', [
+                'supplier_id' => $supplier->id,
+                'error' => $e->getMessage()
+            ]);
+            throw new ApiException('Failed to initialize API credentials: ' . $e->getMessage());
+        }
+
     }
 
     protected function shouldRateLimit(): bool
@@ -104,7 +119,7 @@ class IngramMicroApiClient extends AbstractApiClient
         $defaultParams = [
             'pageNumber' => 1,
             'pageSize' => 25,
-            'type' => 'IM::physical'
+            'type' => 'IM::physical',
         ];
 
         $queryParams = array_merge($defaultParams, array_filter($params));
@@ -126,18 +141,57 @@ class IngramMicroApiClient extends AbstractApiClient
 
         return $this->executeWithRetry(function () use ($queryParams) {
             $this->setHeaders([
-                'IM-CustomerNumber' => "70-509102", //$this->supplier->customer_number,
-               // 'IM-SenderID' => $this->supplier->sender_id,
-                'IM-CorrelationID' => bin2hex(random_bytes(16)), // Generate 32 character random string
-                'IM-CountryCode' => $this->supplier->country_code ?? 'US',
-                'Accept-Language' => app()->getLocale() ?? 'en'
+                'IM-CustomerNumber' => "70-509102",
+                'IM-CorrelationID' => bin2hex(random_bytes(16)),
+                'IM-CountryCode' => $this->supplier->country_code ?? "CA",
             ]);
 
-            $response = $this->request('GET', 'sandbox/resellers/v6/catalog', $queryParams);
+            try {
+                $response = $this->request('GET', 'resellers/v6/catalog', $queryParams);
+                
+                Log::info('Ingram Micro API response:', [
+                    'status' => $response->status(),
+                    'page' => $queryParams['pageNumber'],
+                    'pageSize' => $queryParams['pageSize']
+                ]);
 
-            Log::info('Ingram Micro API response:', $response->json());
-           
-            return $this->handleResponse($response);
+                $data = $this->handleResponse($response);
+                
+                // Handle empty response cases
+                if (empty($data['catalog'])) {
+                    Log::info('No more catalog items to process', [
+                        'page' => $queryParams['pageNumber'],
+                        'pageSize' => $queryParams['pageSize']
+                    ]);
+                    return [
+                        'catalog' => [],
+                        'recordsFound' => $data['recordsFound'] ?? 0,
+                        'isComplete' => true
+                    ];
+                }
+                
+                // Add completion flag
+                $data['isComplete'] = false;
+                if (isset($data['recordsFound']) && 
+                    $queryParams['pageNumber'] * $queryParams['pageSize'] >= $data['recordsFound']) {
+                    $data['isComplete'] = true;
+                }
+                
+                return $data;
+            } catch (ApiException $e) {
+                // Handle 404 or no content responses as completion
+                if ($e->getCode() === 404 || $e->getCode() === 204) {
+                    Log::info('Catalog sync completed - no more items', [
+                        'page' => $queryParams['pageNumber']
+                    ]);
+                    return [
+                        'catalog' => [],
+                        'recordsFound' => 0,
+                        'isComplete' => true
+                    ];
+                }
+                throw $e;
+            }
         });
     }
 
@@ -196,16 +250,22 @@ class IngramMicroApiClient extends AbstractApiClient
             throw new ApiException('Products array is required', 400);
         }
 
-        // Ensure each product has exactly one identifier type
-        foreach ($params['products'] as $product) {
+        // Ensure each product has exactly one valid identifier type
+        foreach ($params['products'] as $index => $product) {
             $identifiers = array_filter([
-                isset($product['ingramPartNumber']),
-                isset($product['vendorPartNumber']),
-                isset($product['upc'])
+                'ingramPartNumber' => !empty($product['ingramPartNumber']),
+                'vendorPartNumber' => !empty($product['vendorPartNumber']),
+                'upc' => !empty($product['upc'])
             ]);
 
             if (count($identifiers) !== 1) {
-                throw new ApiException('Each product must have exactly one identifier type (ingramPartNumber, vendorPartNumber, or upc)', 400);
+                throw new ApiException(
+                    sprintf(
+                        'Product at index %d must have exactly one identifier type (ingramPartNumber, vendorPartNumber, or upc) with a non-empty value',
+                        $index
+                    ),
+                    400
+                );
             }
         }
 
@@ -215,11 +275,9 @@ class IngramMicroApiClient extends AbstractApiClient
 
             // Set required headers for the API request
             $this->setHeaders([
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json',
-                'IM-CustomerNumber' => $this->supplier->customer_number ?? '70-509102',
-                'IM-CountryCode' => $this->supplier->country_code ?? 'US',
-                'IM-CorrelationID' => $correlationId
+                'IM-CustomerNumber' => '70-509102', //$this->supplier->customer_number,
+                'IM-CountryCode' => $this->supplier->country_code ?? 'CA',
+                'IM-CorrelationID' => $correlationId,
             ]);
 
             // Required query parameters must be in the URL
@@ -229,14 +287,30 @@ class IngramMicroApiClient extends AbstractApiClient
                 'includeProductAttributes' => 'true'
             ];
 
+
             $response = $this->request(
                 'POST',
-                '/sandbox/resellers/v6/catalog/priceandavailability?' . http_build_query($queryParams),
+                'resellers/v6/catalog/priceandavailability?' . http_build_query($queryParams),
                 ['products' => $params['products']]
             );
 
 
-            return $this->handleResponse($response);
+            $result = $this->handleResponse($response);
+
+            // Log any products with null productStatusCode or productStatusMessage
+            if (is_array($result)) {
+                foreach ($result as $item) {
+                    if ((isset($item['productStatusCode']) && is_null($item['productStatusCode'])) ||
+                        (isset($item['productStatusMessage']) && is_null($item['productStatusMessage']))) {
+                        Log::warning('Ingram Micro product returned null status code or message', [
+                            'item' => $item,
+                            'request' => $params
+                        ]);
+                    }
+                }
+            }
+
+            return $result;
         });
     }
 
@@ -268,29 +342,40 @@ class IngramMicroApiClient extends AbstractApiClient
 
     protected function getAccessToken(): string
     {
-        $cacheKey = 'ingram_micro_token_' . $this->supplier->id;
-        
         try {
-            // Check for existing valid token
-            if ($cachedToken = cache()->get($cacheKey)) {
-                return $cachedToken;
+            // Validate encrypted credentials exist
+            if (empty($this->apiKey) || empty($this->apiSecret)) {
+                throw new ApiException('API credentials are not properly configured');
             }
 
-            return $this->executeWithRetry(function () use ($cacheKey) {
-                $response = Http::asForm()
-                
-                    ->post($this->baseUrl . '/oauth/oauth30/token', [
-                        'grant_type' => 'client_credentials',
-                        'client_id' => decrypt($this->apiKey),
-                        'client_secret' => decrypt($this->apiSecret),
-                        'scope' => 'read'
-                    ]);
+            // Safely decrypt credentials
+            try {
+                $decryptedKey = decrypt($this->apiKey);
+                $decryptedSecret = decrypt($this->apiSecret);
+
+                if (empty($decryptedKey) || empty($decryptedSecret)) {
+                    throw new ApiException('Decrypted credentials are empty');
+                }
+            } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+                logger()->error('Failed to decrypt credentials', [
+                    'supplier_id' => $this->supplier->id,
+                    'error' => $e->getMessage()
+                ]);
+                throw new ApiException('Failed to decrypt API credentials: ' . $e->getMessage());
+            }
+
+            return $this->executeWithRetry(function () use ($decryptedKey, $decryptedSecret) {
+                $response = Http::asForm()->post($this->baseUrl . '/oauth/oauth30/token', [
+                    'grant_type' => 'client_credentials',
+                    'client_id' => $decryptedKey,
+                    'client_secret' => $decryptedSecret,
+                    'scope' => 'read'
+                ]);
 
                 if ($response->failed()) {
                     $errorBody = $response->body();
                     $statusCode = $response->status();
                     
-                    // Log the error for debugging
                     logger()->error('Ingram Micro token request failed', [
                         'status' => $statusCode,
                         'error' => $errorBody,
@@ -304,23 +389,18 @@ class IngramMicroApiClient extends AbstractApiClient
                 }
 
                 $data = $response->json();
-                if (!isset($data['access_token']) || !isset($data['expires_in'])) {
-                    throw new ApiException('Invalid token response format: missing required fields');
+                if (!isset($data['access_token'])) {
+                    throw new ApiException('Invalid token response format: missing access_token field');
                 }
 
-                // Cache the token for slightly less than its expiration time
-                $expiresIn = (int) $data['expires_in'];
-                $cacheTime = $expiresIn > 60 ? $expiresIn - 60 : $expiresIn;
-                
-                cache()->put($cacheKey, $data['access_token'], now()->addSeconds($cacheTime));
+                logger()->info('New access token created', [
+                    'supplier_id' => $this->supplier->id,
+                    'token_preview' => $data['access_token']
+                ]);
                 
                 return $data['access_token'];
             });
         } catch (\Exception $e) {
-            // Clear the cached token in case it's invalid
-            cache()->forget($cacheKey);
-            
-            // Log the detailed error
             logger()->error('Failed to obtain Ingram Micro access token', [
                 'error' => $e->getMessage(),
                 'supplier_id' => $this->supplier->id,

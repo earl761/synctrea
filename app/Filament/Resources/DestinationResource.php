@@ -27,7 +27,7 @@ class DestinationResource extends Resource
     protected static ?string $model = Destination::class;
 
     protected static ?string $navigationIcon = 'fluentui-stack-20';
-    protected static ?string $navigationGroup = 'Inventory Management';
+    protected static ?string $navigationGroup = 'Inventory Settings';
     protected static ?int $navigationSort = 2;
 
     public static function form(Form $form): Form

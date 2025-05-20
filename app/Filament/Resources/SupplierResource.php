@@ -22,7 +22,7 @@ class SupplierResource extends Resource
     protected static ?string $model = Supplier::class;
 
     protected static ?string $navigationIcon = 'fluentui-stack-20';
-    protected static ?string $navigationGroup = 'Inventory Management';
+    protected static ?string $navigationGroup = 'Inventory Settings';
     protected static ?int $navigationSort = 1;
 
     public static function form(Form $form): Form
@@ -50,7 +50,7 @@ class SupplierResource extends Resource
                                 ])
                                 ->required()
                                 ->label('Type'),
-                            Select::make('region')
+                            Select::make('country_code')
                                 ->options([
                                     'US' => 'US',
                                     'EU' => 'EU',
@@ -74,26 +74,29 @@ class SupplierResource extends Resource
                                 ->label('Region'),
                             TextInput::make('api_endpoint')
                                 ->required()
-                                ->url()
-                                ->maxLength(255),
+                                ->url(),
                             TextInput::make('api_key')
                                 ->required()
-                                ->maxLength(255)
                                 ->password()
                                 ->dehydrateStateUsing(fn ($state) => encrypt($state))
                                 ->dehydrated(fn ($state) => filled($state))
                                 ->label('API Key'),
                             TextInput::make('api_secret')
                                 ->required()
-                                ->maxLength(255)
                                 ->password()
                                 ->dehydrateStateUsing(fn ($state) => encrypt($state))
                                 ->dehydrated(fn ($state) => filled($state))
                                 ->label('API Secret'),
+                            TextInput::make('customer_number')
+                                ->required()
+                                ->label('Customer Number'),
+                            TextInput::make('sender_id')
+                                ->label('Sender ID'),
                             Toggle::make('is_active')
                                 ->label('Active')
                                 ->default(true),
                         ]),
+                        
                 ])
         ]);
     }

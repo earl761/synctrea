@@ -13,9 +13,9 @@ return new class extends Migration
             $table->string('name');
             $table->string('type'); // 'amazon', 'prestashop'
             $table->string('region')->nullable(); // For Amazon regions (US, EU, etc.)
-            $table->string('api_key')->nullable();
-            $table->string('api_secret')->nullable();
-            $table->string('api_endpoint')->nullable();
+            $table->text('api_key')->nullable();
+            $table->text('api_secret')->nullable();
+            $table->text('api_endpoint')->nullable();
             $table->json('credentials')->nullable(); // Additional API credentials
             $table->json('settings')->nullable(); // Destination-specific settings
             $table->boolean('is_active')->default(true);

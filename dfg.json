@@ -1,0 +1,160 @@
+{
+    "product": {
+        "App\\Models\\Product": {
+            "id": 46042,
+            "supplier_id": 1,
+            "sku": "8JG457",
+            "upc": "0849171054937",
+            "name": "10GBASE-SR SFP+ 850NM 300M DOM LC ALLIED TELESIS COMPATIBLE",
+            "description": "ENET Allied Telesis Compatible AT-SFP10SR TAA Compliant Functionally Identical 10GBASE-SR SFP+ 850nm 300m DOM Enabled Multimode Duplex LC Connector - Programmed, Tested, and Supported in the USA, Lifetime Warranty",
+            "brand": "ENet",
+            "manufacturer": null,
+            "category": "Network Devices",
+            "cost_price": "172.00",
+            "retail_price": "341.00",
+            "stock_quantity": 690,
+            "condition": "new",
+            "status": "active",
+            "specifications": null,
+            "dimensions": null,
+            "images": null,
+            "metadata": {
+                "type": "IM::physical",
+                "links": [
+                    {
+                        "href": "/resellers/v6/catalog/priceandavailability",
+                        "type": "POST",
+                        "topic": "catalog"
+                    },
+                    {
+                        "href": "/resellers/v6/catalog/details/8JG457",
+                        "type": "GET",
+                        "topic": "catalog"
+                    }
+                ],
+                "pricing": {
+                    "mapPrice": null,
+                    "retailPrice": 341,
+                    "currencyCode": "USD",
+                    "customerPrice": 172,
+                    "webDiscountsAvailable": null,
+                    "specialBidPricingAvailable": false
+                },
+                "upcCode": "0849171054937",
+                "category": "Network Devices",
+                "directShip": "True",
+                "newProduct": "False",
+                "vendorName": "ENet",
+                "description": "10GBASE-SR SFP+ 850NM 300M DOM LC ALLIED TELESIS COMPATIBLE",
+                "hasWarranty": "False",
+                "productType": "SFP+",
+                "subCategory": "Transceivers",
+                "availability": {
+                    "available": true,
+                    "totalAvailability": 690,
+                    "availabilityByWarehouse": [
+                        {
+                            "location": "Millington, TN",
+                            "leadTimeEta": null,
+                            "warehouseId": "30",
+                            "backOrderInfo": null,
+                            "quantityOnOrder": 0,
+                            "quantityAvailable": 0,
+                            "quantityBackordered": 0,
+                            "quantityBackorderedEta": ""
+                        },
+                        {
+                            "location": "VENDOR WAREHOUSE**",
+                            "leadTimeEta": null,
+                            "warehouseId": null,
+                            "backOrderInfo": null,
+                            "quantityOnOrder": null,
+                            "quantityAvailable": 690,
+                            "quantityBackordered": 0,
+                            "quantityBackorderedEta": ""
+                        }
+                    ]
+                },
+                "discontinued": "False",
+                "hasDiscounts": "False",
+                "replacementSku": "",
+                "endUserRequired": "False",
+                "extraDescription": "ENET Allied Telesis Compatible AT-SFP10SR TAA Compliant Functionally Identical 10GBASE-SR SFP+ 850nm 300m DOM Enabled Multimode Duplex LC Connector - Programmed, Tested, and Supported in the USA, Lifetime Warranty",
+                "ingramPartNumber": "8JG457",
+                "vendorPartNumber": "AT-SP10SR-ENC",
+                "authorizedToPurchase": "True"
+            },
+            "created_at": "2025-05-08T20:50:28.000000Z",
+            "updated_at": "2025-05-08T21:25:45.000000Z",
+            "deleted_at": null,
+            "company_id": null,
+            "part_number": "AT-SP10SR-ENC",
+            "type": "IM::physical",
+            "authorizedToPurchase": "1",
+            "catalog_data": {
+                "numberOfResults": 1,
+                "items": [
+                    {
+                        "asin": "B015XXLZ8O",
+                        "summaries": [
+                            {
+                                "marketplaceId": "A2EUQ1WTGCTBG2",
+                                "adultProduct": false,
+                                "autographed": false,
+                                "brand": "ENET Components, Inc.",
+                                "browseClassification": {
+                                    "displayName": "Network Adapters",
+                                    "classificationId": "680473011"
+                                },
+                                "color": "Na",
+                                "itemClassification": "BASE_PRODUCT",
+                                "itemName": "ENET 10GBASE-SR SFP+ 850NM 300M",
+                                "manufacturer": "ENET SOLUTIONS, INC.",
+                                "memorabilia": false,
+                                "modelNumber": "AT-SP10SR-ENC",
+                                "packageQuantity": 1,
+                                "partNumber": "AT-SP10SR-ENC",
+                                "tradeInEligible": false,
+                                "websiteDisplayGroup": "pc_display_on_website",
+                                "websiteDisplayGroupName": "Personal Computer"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    },
+    "sellerPrice": 0.0,
+    "quantity": 0,
+    "catalog_data": {
+        "numberOfResults": 1,
+        "items": [
+            {
+                "asin": "B015XXLZ8O",
+                "summaries": [
+                    {
+                        "marketplaceId": "A2EUQ1WTGCTBG2",
+                        "adultProduct": false,
+                        "autographed": false,
+                        "brand": "ENET Components, Inc.",
+                        "browseClassification": {
+                            "displayName": "Network Adapters",
+                            "classificationId": "680473011"
+                        },
+                        "color": "Na",
+                        "itemClassification": "BASE_PRODUCT",
+                        "itemName": "ENET 10GBASE-SR SFP+ 850NM 300M",
+                        "manufacturer": "ENET SOLUTIONS, INC.",
+                        "memorabilia": false,
+                        "modelNumber": "AT-SP10SR-ENC",
+                        "packageQuantity": 1,
+                        "partNumber": "AT-SP10SR-ENC",
+                        "tradeInEligible": false,
+                        "websiteDisplayGroup": "pc_display_on_website",
+                        "websiteDisplayGroupName": "Personal Computer"
+                    }
+                ]
+            }
+        ]
+    }
+}

@@ -28,13 +28,18 @@ class Product extends Model
         'cost_price',
         'retail_price',
         'stock_quantity',
-        'condition',
         'status',
         'specifications',
         'dimensions',
         'images',
         'metadata',
         'catalog_data',
+        'quantity',
+        'subcategory',
+        'is_discontinued',
+        'is_direct_ship',
+        'has_warranty',
+        'synced_at'
     ];
 
     protected $casts = [
@@ -46,6 +51,10 @@ class Product extends Model
         'cost_price' => 'decimal:2',
         'retail_price' => 'decimal:2',
         'stock_quantity' => 'integer',
+        'is_discontinued' => 'boolean',
+        'is_direct_ship' => 'boolean', 
+        'has_warranty' => 'boolean',
+        'synced_at' => 'datetime'
     ];
 
     // Constants

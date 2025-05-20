@@ -33,6 +33,7 @@
         "guzzlehttp/psr7": "^2",
         "jeffgreco13/filament-breezy": "^2.2",
         "josespinal/filament-record-navigation": "^2.0",
+        "laravel/cashier": "^15.6",
         "laravel/framework": "^11.9",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.8",

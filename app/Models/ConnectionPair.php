@@ -13,6 +13,7 @@ class ConnectionPair extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
+        'company_id',
         'supplier_id',
         'destination_id',
         'is_active',
@@ -22,6 +23,11 @@ class ConnectionPair extends Model
     protected $casts = [
         'is_active' => 'boolean',
     ];
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
+    }
 
     public function supplier(): BelongsTo
     {
@@ -36,7 +42,7 @@ class ConnectionPair extends Model
     public function products(): BelongsToMany
     {
         return $this->belongsToMany(Product::class)
-            ->withPivot(['catalog_status', 'price_override'])
+            ->withPivot(['catalotatus', 'price_override'])
             ->withTimestamps();
     }
 

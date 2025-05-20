@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Services\Api\IngramMicroApiClient;
+use App\Services\Api\DHApiClient;
 
 class Supplier extends Model
 {
@@ -17,6 +19,9 @@ class Supplier extends Model
         'api_key',
         'api_secret',
         'api_endpoint',
+        'customer_number',
+        'sender_id',
+        'country_code',
         'credentials',
         'settings',
         'is_active',
