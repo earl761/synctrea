@@ -7,10 +7,14 @@ use App\Services\Api\Exceptions\ApiException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
+//class IngramMicroApiClient extends AbstractApiClient
 class IngramMicroApiClient extends AbstractApiClient
 {
     protected Supplier $supplier;
     protected string $apiKey;
+
+    protected string $customerNumber;
+    protected string $countryCode;
     protected string $apiSecret;
     protected int $maxRetries = 3;
     protected int $retryDelay = 1000; // milliseconds
@@ -22,14 +26,22 @@ class IngramMicroApiClient extends AbstractApiClient
         $this->supplier = $supplier;
         $this->baseUrl = $supplier->api_endpoint;
 
+        Log::info('Initializing Ingram Micro API client', [
+            'supplier_id' => $supplier,
+            'api_endpoint' => $this->baseUrl
+        ]);
         // Validate that API credentials are set
         if (empty($supplier->api_key) || empty($supplier->api_secret)) {
             throw new ApiException('API credentials are not configured for this supplier');
         }
 
         try {
+           
             $this->apiKey = $supplier->api_key;
             $this->apiSecret = $supplier->api_secret;
+            $this->customerNumber = $supplier->customer_number;
+            $this->countryCode = $supplier->country_code ;
+
         } catch (\Exception $e) {
             Log::error('Failed to initialize IngramMicro API credentials', [
                 'supplier_id' => $supplier->id,
@@ -118,8 +130,8 @@ class IngramMicroApiClient extends AbstractApiClient
     {
         $defaultParams = [
             'pageNumber' => 1,
-            'pageSize' => 25,
-            'type' => 'IM::physical',
+            'pageSize' => 100,
+            'type' => 'IM::any',
         ];
 
         $queryParams = array_merge($defaultParams, array_filter($params));
@@ -141,9 +153,9 @@ class IngramMicroApiClient extends AbstractApiClient
 
         return $this->executeWithRetry(function () use ($queryParams) {
             $this->setHeaders([
-                'IM-CustomerNumber' => "70-509102",
+                'IM-CustomerNumber' => $this->customerNumber,
                 'IM-CorrelationID' => bin2hex(random_bytes(16)),
-                'IM-CountryCode' => $this->supplier->country_code ?? "CA",
+                'IM-CountryCode' => $this->countryCode,
             ]);
 
             try {
@@ -151,6 +163,7 @@ class IngramMicroApiClient extends AbstractApiClient
                 
                 Log::info('Ingram Micro API response:', [
                     'status' => $response->status(),
+                    'body' => $response,
                     'page' => $queryParams['pageNumber'],
                     'pageSize' => $queryParams['pageSize']
                 ]);
@@ -275,7 +288,7 @@ class IngramMicroApiClient extends AbstractApiClient
 
             // Set required headers for the API request
             $this->setHeaders([
-                'IM-CustomerNumber' => '70-509102', //$this->supplier->customer_number,
+                'IM-CustomerNumber' =>  $this->supplier->customer_number,
                 'IM-CountryCode' => $this->supplier->country_code ?? 'CA',
                 'IM-CorrelationID' => $correlationId,
             ]);
@@ -314,6 +327,27 @@ class IngramMicroApiClient extends AbstractApiClient
         });
     }
 
+    public function getProductDetails(string $sku): array
+    {
+        // Add delay between API calls (500ms)
+        usleep(500000);
+        
+        return $this->executeWithRetry(function () use ($sku) {
+            // Generate a unique 32-character correlation ID
+            $correlationId = bin2hex(random_bytes(16));
+
+            // Set required headers for the API request
+            $this->setHeaders([
+                'IM-CustomerNumber' => $this->supplier->customer_number,
+                'IM-CountryCode' => $this->supplier->country_code ?? 'CA',
+                'IM-CorrelationID' => $correlationId,
+            ]);
+
+            $response = $this->request('GET', "resellers/v6/catalog/details/{$sku}");
+            return $this->handleResponse($response);
+        });
+    }
+
     public function getOrder(string $orderId): array
     {
         return $this->executeWithRetry(function () use ($orderId) {
@@ -348,10 +382,17 @@ class IngramMicroApiClient extends AbstractApiClient
                 throw new ApiException('API credentials are not properly configured');
             }
 
+          
+
             // Safely decrypt credentials
             try {
                 $decryptedKey = decrypt($this->apiKey);
                 $decryptedSecret = decrypt($this->apiSecret);
+
+                Log::info('Decrypted credentials', [
+                    'decrypted_key' => $decryptedKey,
+                    'decrypted_secret' => $decryptedSecret
+                ]);
 
                 if (empty($decryptedKey) || empty($decryptedSecret)) {
                     throw new ApiException('Decrypted credentials are empty');

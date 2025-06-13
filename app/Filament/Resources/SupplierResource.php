@@ -8,6 +8,7 @@ use Filament\Forms\Components\Card;
 use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -96,8 +97,28 @@ class SupplierResource extends Resource
                                 ->label('Active')
                                 ->default(true),
                         ]),
-                        
+                ]),
+            Card::make()
+                ->schema([
+                    KeyValue::make('credentials')
+                        ->label('SFTP Credentials')
+                        ->addButtonLabel('Add Credential')
+                        ->keyLabel('Key')
+                        ->valueLabel('Value')
+                        ->default([
+                            'sftp_host' => '',
+                            'sftp_username' => '',
+                            'sftp_password' => '',
+                            'sftp_path' => '/PRICE.ZIP'
+                        ])
+                        ->rules(['array'])
+                        ->helperText('Required keys: sftp_host, sftp_username, sftp_password, sftp_path')
+                        ->visible(fn ($get) => $get('type') === 'ingram_micro')
+                        ->columnSpan('full')
                 ])
+                ->visible(fn ($get) => $get('type') === 'ingram_micro')
+                ->columnSpan('full')
+                ->heading('SFTP Settings')
         ]);
     }
 

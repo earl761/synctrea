@@ -66,17 +66,19 @@ class DestinationResource extends Resource
                                 ->label(fn (callable $get) => $get('type') === 'amazon' ? 'AWS Access Key ID' : 'API Key'),
 
                             TextInput::make('api_secret')
-                                ->required()
-                                ->label(fn (callable $get) => $get('type') === 'amazon' ? 'AWS Secret Access Key' : 'API Secret'),
+                                ->required(fn (callable $get) => $get('type') === 'amazon')
+                                ->label(fn (callable $get) => $get('type') === 'amazon' ? 'AWS Secret Access Key' : 'API Secret')
+                                ->visible(fn (callable $get) => $get('type') === 'amazon'),
 
                             KeyValue::make('credentials')
-                                ->required()
+                                ->required(fn (callable $get) => $get('type') === 'amazon')
                                 ->label('Additional Credentials')
                                 ->addActionLabel('Add Credential')
                                 ->keyLabel('Key')
                                 ->valueLabel('Value')
                                 ->default([])
-                                ->reorderable(),
+                                ->reorderable()
+                                ->visible(fn (callable $get) => $get('type') === 'amazon'),
 
                             Toggle::make('is_active')
                                 ->label('Active')

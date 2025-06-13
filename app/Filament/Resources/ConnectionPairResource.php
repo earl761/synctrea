@@ -26,6 +26,7 @@ use Filament\Actions\CreateAction;
 use App\Models\PricingRule;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Artisan;
 
 class ConnectionPairResource extends Resource
 {
@@ -83,13 +84,6 @@ class ConnectionPairResource extends Resource
                             \Filament\Forms\Components\Toggle::make('is_active')
                                 ->label('Active')
                                 ->default(true),
-
-                            \Filament\Forms\Components\KeyValue::make('settings')
-                                ->label('Connection Settings')
-                                ->keyLabel('Setting Name')
-                                ->valueLabel('Setting Value')
-                                ->reorderable()
-                                ->columnSpanFull(),
                         ])
                 ])
         ]);
@@ -169,6 +163,39 @@ class ConnectionPairResource extends Resource
                         return route('filament.admin.resources.connection-pair-products.index', ['connection_pair_id' => $record->id]);
                     })
                     ->color('success'),
+                Tables\Actions\Action::make('syncProducts')
+                    ->label('Sync Products')
+                    ->icon('heroicon-o-arrow-path')
+                    ->action(function (\App\Models\ConnectionPair $record): void {
+                        if ($record->destination->type === 'amazon') {
+                            $command = 'amazon:sync-catalog --connection-pair-id=' . $record->id;
+                        } elseif ($record->destination->type === 'prestashop') {
+                            $command = 'sync:prestashop-products --connection-pair-id=' . $record->id;
+                        } else {
+                            Notification::make()
+                                ->warning()
+                                ->title('Sync not supported')
+                                ->body('Sync is not supported for this destination type.')
+                                ->send();
+                            return;
+                        }
+                        
+                        try {
+                            Artisan::call($command);
+                            Notification::make()
+                                ->success()
+                                ->title('Sync started')
+                                ->body('Product synchronization has been initiated.')
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Sync failed')
+                                ->body('Failed to start product synchronization: ' . $e->getMessage())
+                                ->send();
+                        }
+                    })
+                    ->color('warning'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

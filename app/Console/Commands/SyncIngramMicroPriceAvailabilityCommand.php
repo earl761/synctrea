@@ -101,9 +101,89 @@ class SyncIngramMicroPriceAvailabilityCommand extends Command
 
                                 //::info('Item: '. json_encode($item));
 
+
+                                // {
+                                //     "ingramPartNumber": "5348387",
+                                //     "vendorPartNumber": "20VE0117MH",
+                                //     "productAuthorized": "True",
+                                //     "description": "TB 15 G2 CI5-1135G7 8/256GB 15.6 W11P",
+                                //     "upc": "196119831243",
+                                //     "productCategory": "Computers Test Duplicate",
+                                //     "productSubcategory": "Notebooks & Tablets",
+                                //     "vendorName": "Lenovo",
+                                //     "vendorNumber": "0000500082",
+                                //     "productStatusCode": null,
+                                //     "productClass": null,
+                                //     "indicators": {
+                                //       "hasWarranty": true,
+                                //       "isNewProduct": false,
+                                //       "hasReturnLimits": false,
+                                //       "isBackOrderAllowed": false,
+                                //       "isShippedFromPartner": false,
+                                //       "isReplacementProduct": false,
+                                //       "replacementType": null,
+                                //       "isDirectship": false,
+                                //       "isDownloadable": false,
+                                //       "isDigitalType": false,
+                                //       "skuType": "M",
+                                //       "hasStdSpecialPrice": false,
+                                //       "hasAcopSpecialPrice": false,
+                                //       "hasAcopQuantityBreak": false,
+                                //       "hasStdWebDiscount": false,
+                                //       "hasAcopWebDiscount": false,
+                                //       "hasSpecialBid": false,
+                                //       "isExportableToCountry": false,
+                                //       "isDiscontinuedProduct": true,
+                                //       "isRefurbished": false,
+                                //       "isReturnableProduct": false,
+                                //       "isIngramShip": true,
+                                //       "isEnduserRequired": false,
+                                //       "isHeavyWeight": false,
+                                //       "hasLtl": false,
+                                //       "isClearanceProduct": false,
+                                //       "hasBundle": false,
+                                //       "isOversizeProduct": false,
+                                //       "isPreorderProduct": false,
+                                //       "isLicenseProduct": false,
+                                //       "isDirectshipOrderable": true,
+                                //       "isServiceSku": false,
+                                //       "isConfigurable": false
+                                //     },
+                                //     "ciscoFields": {
+                                //       "productSubGroup": null,
+                                //       "serviceProgramName": null,
+                                //       "itemCatalogCategory": null,
+                                //       "configurationIndicator": null,
+                                //       "internalBusinessEntity": null,
+                                //       "itemType": null,
+                                //       "globalListPrice": null
+                                //     },
+                                //     "warrantyInformation": [],
+                                //     "additionalInformation": {
+                                //       "productWeight": [
+                                //         {
+                                //           "plantId": "NL01",
+                                //           "weight": 2.6,
+                                //           "weightUnit": "KG"
+                                //         }
+                                //       ],
+                                //       "isBulkFreight": false,
+                                //       "height": "8",
+                                //       "width": "31",
+                                //       "length": "50",
+                                //       "netWeight": null,
+                                //       "dimensionUnit": "CM"
+                                //     }
+                                //   }
+
                                 $sku = $item['ingramPartNumber'] ?? null;
                                 if (!$sku) continue;
 
+                               
+
+                                $sku = $item['ingramPartNumber'] ?? null;
+                                if (!$sku) continue;
+                                
                                 $product = $products->firstWhere('sku', $sku);
                                 if (!$product) continue;
 
@@ -125,7 +205,13 @@ class SyncIngramMicroPriceAvailabilityCommand extends Command
                                             'availability' => $availability,
                                         ]
                                     ),
-                                    'synced_at' => now(),
+                                    // 'weight' => $weight,
+                                    // 'weight_unit' => $weightUnit,
+                                    // 'height' => $height,
+                                    // 'width' => $width,
+                                    // 'length' => $length,
+                                    // 'net_weight' => $netWeight,
+                                    //'synced_at' => now(),
                                 ]);
 
                                 $totalUpdated++;
@@ -142,6 +228,36 @@ class SyncIngramMicroPriceAvailabilityCommand extends Command
                             $totalProcessed,
                             $totalUpdated
                         ));
+                        $this->info('Processing product details...');
+                        foreach ($productData as $productIdentifier) {
+                            $sku = $productIdentifier['ingramPartNumber'] ?? null;
+                            if (!$sku) continue;
+                            
+                            $product = $products->firstWhere('sku', $sku);
+                            if (!$product) continue;
+
+                            $productDetails = $client->getProductDetails($sku);
+
+                            $weight = $productDetails['additionalInformation']['productWeight'][0]['weight'] ?? null;
+                            $weightUnit = $productDetails['additionalInformation']['productWeight'][0]['weightUnit'] ?? null;
+                            $height = $productDetails['additionalInformation']['height'] ?? null;
+                            $width = $productDetails['additionalInformation']['width'] ?? null;
+                            $length = $productDetails['additionalInformation']['length'] ?? null;
+                            $netWeight = $productDetails['additionalInformation']['netWeight'] ?? null;
+                            $dimensionUnit = $productDetails['additionalInformation']['dimensionUnit'] ?? null;
+                            $isBulkFreight = $productDetails['additionalInformation']['isBulkFreight'] ?? null;
+
+                            $product->update([
+                                'weight' => $weight,
+                                'weight_unit' => $weightUnit,
+                                'height' => $height,
+                                'width' => $width,
+                                'length' => $length,
+                                'net_weight' => $netWeight,
+                                'dimension_unit' => $dimensionUnit,
+                                //'is_bulk_freight' => $isBulkFreight,
+                            ]);
+                        }
                     } catch (\Exception $e) {
                         Log::error('Failed to process chunk: ' . $e->getMessage(), [
                             'productData' => $productData,
@@ -151,6 +267,11 @@ class SyncIngramMicroPriceAvailabilityCommand extends Command
                     }
                 });
 
+                
+
+                
+            
+
             $syncLog->update([
                 'status' => 'completed',
                 'completed_at' => now(),
@@ -159,6 +280,8 @@ class SyncIngramMicroPriceAvailabilityCommand extends Command
                     'total_updated' => $totalUpdated,
                 ],
             ]);
+
+
 
             $this->info(sprintf(
                 'Sync completed. Processed %d products, updated %d',

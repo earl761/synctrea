@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\ConnectionPairProduct;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 
 class ConnectionPairProductObserver
 {
@@ -37,31 +38,150 @@ class ConnectionPairProductObserver
      */
     private function checkAndSyncWithCatalog(ConnectionPairProduct $connectionPairProduct): void
     {
-        // Only process items that haven't been synced yet
+        try {
+            // Validate sync conditions
+            if (!$this->validateSyncConditions($connectionPairProduct)) {
+                return;
+            }
+
+            // Get the connection pair and validate relationships
+            $connectionPair = $connectionPairProduct->connectionPair;
+            $company = $connectionPair->company;
+            $product = $connectionPairProduct->product;
+
+            if (!$this->validateRelationships($connectionPair, $company, $product)) {
+                return;
+            }
+
+            // Check for recent sync attempts to prevent duplicates
+            if ($this->hasRecentSyncAttempt($connectionPairProduct)) {
+                return;
+            }
+
+            // Update sync status to processing
+            $connectionPairProduct->update([
+                'sync_status' => 'processing',
+                'last_sync_attempt' => now(),
+                'sync_error' => null
+            ]);
+
+            // Dispatch sync job to queue
+            dispatch(function () use ($connectionPair, $connectionPairProduct) {
+                try {
+                    Artisan::call('amazon:sync-catalog', [
+                        '--connection-pair-id' => $connectionPair->id,
+                        '--product-id' => $connectionPairProduct->product_id
+                    ]);
+
+                    $connectionPairProduct->update([
+                        'sync_status' => 'completed',
+                        'last_synced_at' => now()
+                    ]);
+
+                    Log::info('Successfully synced product with catalog', [
+                        'connection_pair_product_id' => $connectionPairProduct->id,
+                        'connection_pair_id' => $connectionPair->id
+                    ]);
+                } catch (\Exception $e) {
+                    $this->handleSyncError($connectionPairProduct, $e);
+                }
+            })->onQueue('catalog-sync');
+
+        } catch (\Exception $e) {
+            $this->handleSyncError($connectionPairProduct, $e);
+        }
+    }
+
+    /**
+     * Validate basic sync conditions
+     */
+    private function validateSyncConditions(ConnectionPairProduct $connectionPairProduct): bool
+    {
+        // Check if item is already synced
         if (!is_null($connectionPairProduct->last_synced_at)) {
-            return;
+            Log::info('Skipping sync - already synced', [
+                'connection_pair_product_id' => $connectionPairProduct->id
+            ]);
+            return false;
         }
 
-        // Make sure catalog_status is 'in_catalog'
+        // Validate catalog status
         if ($connectionPairProduct->catalog_status !== 'in_catalog') {
-            return;
+            Log::info('Skipping sync - not in catalog', [
+                'connection_pair_product_id' => $connectionPairProduct->id,
+                'status' => $connectionPairProduct->catalog_status
+            ]);
+            return false;
         }
 
-        // Get the connection pair and check owner is active
-        $connectionPair = $connectionPairProduct->connectionPair;
+        return true;
+    }
+
+    /**
+     * Validate relationships and their states
+     */
+    private function validateRelationships($connectionPair, $company, $product): bool
+    {
         if (!$connectionPair) {
-            return;
+            Log::error('Connection pair not found');
+            return false;
         }
 
-        // Check if company exists and has an active subscription
-        $company = $connectionPair->company;
-        if (!$company || !$company->isSubscriptionActive()) {
-            return;
+        if (!$company) {
+            Log::error('Company not found', [
+                'connection_pair_id' => $connectionPair->id
+            ]);
+            return false;
         }
 
-        // Run the sync command for this specific item
-        Artisan::call('amazon:sync-catalog', [
-            '--connection-pair-id' => $connectionPair->id
+        if (!$company->isSubscriptionActive()) {
+            Log::info('Skipping sync - inactive subscription', [
+                'company_id' => $company->id
+            ]);
+            return false;
+        }
+
+        if (!$product) {
+            Log::error('Product not found', [
+                'connection_pair_id' => $connectionPair->id
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check for recent sync attempts to prevent duplicates
+     */
+    private function hasRecentSyncAttempt(ConnectionPairProduct $connectionPairProduct): bool
+    {
+        if ($connectionPairProduct->last_sync_attempt &&
+            $connectionPairProduct->last_sync_attempt->diffInMinutes(now()) < 5) {
+            Log::info('Skipping sync - recent attempt exists', [
+                'connection_pair_product_id' => $connectionPairProduct->id,
+                'last_attempt' => $connectionPairProduct->last_sync_attempt
+            ]);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Handle sync errors
+     */
+    private function handleSyncError(ConnectionPairProduct $connectionPairProduct, \Exception $e): void
+    {
+        Log::error('Failed to sync product with catalog', [
+            'connection_pair_product_id' => $connectionPairProduct->id,
+            'error' => $e->getMessage()
+        ]);
+
+        $connectionPairProduct->update([
+            'sync_status' => 'failed',
+            'sync_error' => $e->getMessage(),
+            'last_sync_attempt' => now()
         ]);
     }
 }

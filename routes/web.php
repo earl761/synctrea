@@ -5,6 +5,10 @@ use App\Http\Controllers\PricingController;
 use App\Http\Controllers\BlogController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\ContactController;
+use App\Livewire\Pages\WelcomePage;
+use App\Livewire\Pages\AboutPage;
+use App\Livewire\Pages\PricingPage;
+use App\Livewire\Pages\ContactPage;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
@@ -28,25 +32,11 @@ Route::post(
 |
 */
 
-// Main pages
-Route::get('/', function () {
-    return view('welcome');
-})->name('home');
-
-Route::get('/about', function () {
-    return view('about', [
-        'teamMembers' => collect([
-            (object)[
-                'name' => 'Sarah Johnson',
-                'position' => 'CEO & Founder',
-                'photo_url' => asset('images/team/sarah.jpg'),
-                'twitter' => 'https://twitter.com/sarahjohnson',
-                'linkedin' => 'https://linkedin.com/in/sarahjohnson'
-            ],
-            // Add more team members here
-        ])
-    ]);
-})->name('about');
+// Main pages - Using Livewire components
+Route::get('/', WelcomePage::class)->name('home');
+Route::get('/about', AboutPage::class)->name('about');
+Route::get('/contact', ContactPage::class)->name('contact');
+Route::get('/pricing', PricingPage::class)->name('pricing');
 
 // Blog routes
 Route::prefix('blog')->group(function () {
@@ -62,15 +52,8 @@ Route::prefix('suppliers')->group(function () {
     Route::get('/{id}', [SupplierController::class, 'show'])->name('suppliers.show');
 });
 
-// Contact routes
-Route::get('/contact', function () {
-    $settings = app(App\Settings\GeneralSettings::class);
-    return view('contact', compact('settings'));
-})->name('contact');
-
+// Legacy contact form submission - can be removed once Livewire form is working
 Route::post('/contact/submit', [ContactController::class, 'submit'])->name('contact.submit');
-
-Route::get('/pricing', [PricingController::class, 'index'])->name('pricing');
 
 // Email verification routes
 Route::get('/email/verify', function () {

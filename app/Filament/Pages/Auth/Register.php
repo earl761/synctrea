@@ -199,11 +199,11 @@ class Register extends BaseRegister
                 'error' => $e->getMessage()
             ]);
             
-            Notification::make()
-                ->title('Account created successfully')
-                ->body('However, there was an issue sending the verification email. You can request a new verification email later.')
-                ->warning()
-                ->send();
+            // Notification::make()
+            //     ->title('Account created successfully')
+            //     ->body('However, there was an issue sending the verification email. You can request a new verification email later.')
+            //     ->warning()
+            //     ->send();
         }
 
         return app(RegistrationResponse::class);

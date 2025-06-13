@@ -14,6 +14,15 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
+        // Run Ingram Micro feed update daily
+        $schedule->command('ingram:feed-update')
+            ->name('ingram-feed-update')
+            ->dailyAt('06:00')
+            ->withoutOverlapping()
+            ->onFailure(function () {
+                Log::error('Ingram Micro feed update failed');
+            });
+
         // Run Amazon bulk catalog update every minute for testing
         $schedule->call(function () {
             \App\Models\ConnectionPair::with('company')
@@ -40,6 +49,24 @@ class Kernel extends ConsoleKernel
         ->hourly()
         ->withoutOverlapping();
 
+        // Run connection pair product fields sync hourly
+        $schedule->command('connection-pair-products:sync-fields')
+            ->name('connection-pair-products-sync')
+            ->hourly()
+            ->withoutOverlapping()
+            ->onFailure(function () {
+                Log::error('Connection pair products sync failed');
+            });
+
+        // Run PrestaShop product sync hourly
+        $schedule->command('sync:prestashop-products')
+            ->name('prestashop-products-sync')
+            ->hourly()
+            ->withoutOverlapping()
+            ->onFailure(function () {
+                Log::error('PrestaShop products sync failed');
+            });
+
         // Run Ingram Micro Catalog sync twice daily at 6 AM and 6 PM
         $schedule->command('ingram:sync-catalog')
             ->name('ingram-micro-catalog-sync')
@@ -49,9 +76,22 @@ class Kernel extends ConsoleKernel
                 // Run price availability sync immediately after catalog sync succeeds
                 Artisan::call('ingram:sync-price-availability');
                 Log::info('Ingram Micro price availability sync triggered after successful catalog sync');
+                
+                // Run connection pair products sync after catalog sync
+                Artisan::call('sync:connection-pair-products', ['--supplier' => 'ingram_micro']);
+                Log::info('Connection pair products sync triggered after successful catalog sync');
             })
             ->onFailure(function () {
                 Log::error('Ingram Micro catalog sync failed');
+            });
+
+        // Run connection pair products sync hourly
+        $schedule->command('sync:connection-pair-products', ['--supplier' => 'ingram_micro'])
+            ->name('connection-pair-products-sync')
+            ->hourly()
+            ->withoutOverlapping()
+            ->onFailure(function () {
+                Log::error('Connection pair products sync failed');
             });
     }
 
@@ -73,5 +113,7 @@ class Kernel extends ConsoleKernel
         Commands\SyncAmazonCatalogCommand::class,
         Commands\SyncIngramMicroCatalogCommand::class,
         Commands\SyncIngramMicroPriceAvailabilityCommand::class,
+        Commands\SyncPrestaShopProductsCommand::class,
+        Commands\SyncConnectionPairProductsCommand::class,
     ];
 }

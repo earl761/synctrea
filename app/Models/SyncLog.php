@@ -21,7 +21,10 @@ class SyncLog extends Model
         'error_data',
         'started_at',
         'completed_at',
-        'error'
+        'error',
+        'metadata',
+        //query params
+    
     ];
 
     protected $casts = [

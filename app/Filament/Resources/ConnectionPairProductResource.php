@@ -69,6 +69,10 @@ class ConnectionPairProductResource extends Resource
                 Forms\Components\TextInput::make('stock')
                     ->required()
                     ->numeric(),
+                Forms\Components\TextInput::make('weight')
+                    ->numeric()
+                    ->step(0.01)
+                    ->suffix('kg'),
                 Forms\Components\Select::make('catalog_status')
                     ->options([
                         ConnectionPairProduct::STATUS_DEFAULT => 'Default',
@@ -203,6 +207,11 @@ class ConnectionPairProductResource extends Resource
                 Tables\Columns\TextColumn::make('stock')
                     ->numeric()
                     ->sortable(),
+                Tables\Columns\TextColumn::make('weight')
+                    ->numeric()
+                    ->suffix(' kg')
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\BadgeColumn::make('catalog_status')
                     ->colors([
                         'warning' => ConnectionPairProduct::STATUS_DEFAULT,
@@ -223,6 +232,7 @@ class ConnectionPairProductResource extends Resource
                     ->toggleable()
                     ->toggledHiddenByDefault(),
             ])
+            ->filtersFormColumns(3)
             ->filters([
                 SelectFilter::make('catalog_status')
                     ->options([
@@ -236,6 +246,96 @@ class ConnectionPairProductResource extends Resource
                         'fixed' => 'Fixed Price',
                         'percentage' => 'Percentage Markup'
                     ]),
+                Tables\Filters\SelectFilter::make('has_upc')
+                    ->label('UPC Status')
+                    ->options([
+                        '1' => 'Has UPC',
+                        '0' => 'No UPC'
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when($data['value'] !== null, function ($query) use ($data) {
+                            return $data['value'] ? $query->whereNotNull('upc') : $query->whereNull('upc');
+                        });
+                    }),
+                Tables\Filters\Filter::make('stock')
+                    ->form([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('stock_from')
+                                    ->numeric()
+                                    ->label('Min Quantity'),
+                                Forms\Components\TextInput::make('stock_to')
+                                    ->numeric()
+                                    ->label('Max Quantity'),
+                            ])
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['stock_from'],
+                                fn (Builder $query, $value): Builder => $query->where('stock', '>=', $value),
+                            )
+                            ->when(
+                                $data['stock_to'],
+                                fn (Builder $query, $value): Builder => $query->where('stock', '<=', $value),
+                            );
+                    }),
+                Tables\Filters\Filter::make('weight')
+                    ->form([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('weight_from')
+                                    ->numeric()
+                                    ->step(0.01)
+                                    ->suffix('kg')
+                                    ->label('Min Weight'),
+                                Forms\Components\TextInput::make('weight_to')
+                                    ->numeric()
+                                    ->step(0.01)
+                                    ->suffix('kg')
+                                    ->label('Max Weight'),
+                            ])
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['weight_from'],
+                                fn (Builder $query, $value): Builder => $query->where('weight', '>=', $value),
+                            )
+                            ->when(
+                                $data['weight_to'],
+                                fn (Builder $query, $value): Builder => $query->where('weight', '<=', $value),
+                            );
+                    }),
+                Tables\Filters\Filter::make('price')
+                    ->form([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('price_from')
+                                    ->numeric()
+                                    ->prefix('$')
+                                    ->label('Min Price'),
+                                Forms\Components\TextInput::make('price_to')
+                                    ->numeric()
+                                    ->prefix('$')
+                                    ->label('Max Price'),
+                            ])
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['price_from'],
+                                fn (Builder $query, $value): Builder => $query->where('price', '>=', $value),
+                            )
+                            ->when(
+                                $data['price_to'],
+                                fn (Builder $query, $value): Builder => $query->where('price', '<=', $value),
+                            );
+                    }),
+                Tables\Filters\SelectFilter::make('brand')
+                    ->relationship('product', 'brand')
+                    ->searchable()
+                    ->preload(),
             ])
             ->actions([
                 Tables\Actions\Action::make('queue')

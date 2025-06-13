@@ -79,63 +79,87 @@ class SyncIngramMicroCatalogCommand extends Command
 
             $this->info('Starting Ingram Micro catalog sync...');
             $progressBar = null;
+            $totalRecords = 0; // Initialize total records counter
+            $failedAttempts = 0; // Initialize failed attempts counter
+            $maxRetries = 3; // Set maximum retry attempts
 
             do {
                 $params['pageNumber'] = $pageNumber;
                 $result = $client->getCatalog($params);
 
                 if (!$progressBar && isset($result['recordsFound'])) {
-                    $progressBar = $this->output->createProgressBar($result['recordsFound']);
+                    $totalRecords = $result['recordsFound']; // Set total records from API response
+                    $this->info("\nTotal records found: {$totalRecords}");
+                    $progressBar = $this->output->createProgressBar($totalRecords);
                 }
 
-                // Handle empty responses as completion
-                if (empty($result['catalog']) || ($result['isComplete'] ?? false)) {
-                    $this->info("\nNo more items to process, sync completed successfully.");
-                    break;
+                // Handle empty responses
+                if (empty($result['catalog'])) {
+                    $failedAttempts++;
+                    if ($failedAttempts >= $maxRetries) {
+                        $this->warn("\nNo more products found after {$totalProcessed} items.");
+                        break;
+                    }
+                    // Add a delay before retrying
+                    sleep(2);
+                    $this->warn("Empty response received, retrying... (Attempt {$failedAttempts} of {$maxRetries})");
+                    continue;
                 }
+
+                // Reset failed attempts counter on successful response
+                $failedAttempts = 0;
 
                 DB::beginTransaction();
                 try {
                     foreach ($result['catalog'] as $item) {
-                        $product = Product::updateOrCreate(
-                            [
-                                'supplier_id' => $supplier->id,
-                                'sku' => $item['ingramPartNumber'],
-                            ],
-                            [
-                                'name' => $item['description'],
-                                'type' => $item['type'],
-                                'part_number' => $item['vendorPartNumber'],
-                                'authorizedToPurchase' => $item['authorizedToPurchase'] === 'True',
-                                'cost_price' =>0 ,
-                                'retail_price' =>0 ,
-                                'quantity' => 0,
-                                'description' => $item['extraDescription'] ?? '',
-                                'category' => $item['category'] ?? '',
-                                'subcategory' => $item['subCategory'] ?? '',
-                                'brand' => $item['vendorName'] ?? '',
-                                'upc' => $item['upcCode'] ?? '',
-                                'is_discontinued' => $item['discontinued'] === 'True',
-                                'is_direct_ship' => $item['directShip'] === 'True',
-                                'has_warranty' => $item['hasWarranty'] === 'True',
-                                'metadata' => $item,
-                                'synced_at' => now(),
-                            ]
-                        );
+                        $sku = (string) $item['ingramPartNumber'];
+                        
+                        // Check if product exists before attempting to create/update
+                        $existingProduct = Product::where('supplier_id', $supplier->id)
+                            ->whereRaw('BINARY sku = ?', [$sku])
+                            ->first();
+                            
+                        // Track processed SKUs
+                        $processedSkus[] = $sku;
 
-                        // Track this SKU as processed
-                        $processedSkus[] = $item['ingramPartNumber'];
+                        $updateData = [
+                            'name' => $item['description'],
+                            'type' => $item['type'],
+                            'part_number' => $item['vendorPartNumber'],
+                            'authorizedToPurchase' => $item['authorizedToPurchase'] === 'True',
+                            'cost_price' => 0,
+                            'retail_price' => 0,
+                            'stock_quantity' => 0,
+                            'description' => $item['extraDescription'] ?? '',
+                            'category' => $item['category'] ?? '',
+                            'subcategory' => $item['subCategory'] ?? '',
+                            'brand' => $item['vendorName'] ?? '',
+                            'upc' => $item['upcCode'] ?? '',
+                            'metadata' => $item,
+                        ];
 
-                        $totalProcessed++;
-                        if ($product->wasRecentlyCreated) {
-                            $totalCreated++;
-                        } else {
-                            $totalUpdated++;
+                        try {
+                            if ($existingProduct) {
+                                $existingProduct->update($updateData);
+                                $totalUpdated++;
+                            } else {
+                                Product::create([
+                                    'supplier_id' => $supplier->id,
+                                    'sku' => $sku,
+                                    ...$updateData
+                                ]);
+                                $totalCreated++;
+                            }
+                            $totalProcessed++;
+                        } catch (\Exception $e) {
+                            $this->error("Failed to process product with SKU: {$sku}. Error: {$e->getMessage()}");
                         }
-
+                        
                         if ($progressBar) {
                             $progressBar->advance();
                         }
+
+
                     }
                     DB::commit();
                 } catch (\Exception $e) {
@@ -143,7 +167,23 @@ class SyncIngramMicroCatalogCommand extends Command
                     throw $e;
                 }
 
+                // Check if we've processed all records
+                if ($totalRecords > 0 && $totalProcessed >= $totalRecords) {
+                    $this->info("\nProcessed all {$totalRecords} records successfully.");
+                    break;
+                }
+
+                // Check if the API indicates completion
+                if ($result['isComplete'] ?? false) {
+                    $this->info("\nAPI indicates no more records to process.");
+                    break;
+                }
+
                 $pageNumber++;
+                $this->info("\nFetching page {$pageNumber}...");
+                
+                // Add delay between pages
+                sleep(2); // 2 seconds delay between pages
             } while (true); // Loop will break when isComplete is true or no more items
 
             if ($progressBar) {

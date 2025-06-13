@@ -9,12 +9,14 @@ class PrestaShopApiClient extends AbstractApiClient
 {
     protected Destination $destination;
     protected string $apiKey;
+    protected ?string $skuPrefix;
 
     public function __construct(Destination $destination)
     {
         $this->destination = $destination;
         $this->baseUrl = rtrim($destination->api_endpoint, '/') . '/api';
         $this->apiKey = $destination->api_key;
+        $this->skuPrefix = $destination->connectionPair->sku_prefix ?? '';
     }
 
     public function initialize(): void
@@ -39,10 +41,24 @@ class PrestaShopApiClient extends AbstractApiClient
         $this->isInitialized = true;
     }
 
+    protected function getPrefixedSku(string $sku): string
+    {
+        return $this->skuPrefix . $sku;
+    }
+
+    protected function removePrefixFromSku(string $sku): string
+    {
+        if ($this->skuPrefix && str_starts_with($sku, $this->skuPrefix)) {
+            return substr($sku, strlen($this->skuPrefix));
+        }
+        return $sku;
+    }
+
     public function getProduct(string $sku): array
     {
+        $prefixedSku = $this->getPrefixedSku($sku);
         $response = $this->request('GET', 'products', [
-            'filter[reference]' => $sku,
+            'filter[reference]' => $prefixedSku,
             'display' => 'full',
         ]);
         return $this->handleResponse($response)['products'][0] ?? [];
@@ -53,7 +69,8 @@ class PrestaShopApiClient extends AbstractApiClient
         $params = ['display' => 'full'];
         
         if (!empty($skus)) {
-            $params['filter[reference]'] = '[' . implode('|', $skus) . ']';
+            $prefixedSkus = array_map([$this, 'getPrefixedSku'], $skus);
+            $params['filter[reference]'] = '[' . implode('|', $prefixedSkus) . ']';
         }
 
         $response = $this->request('GET', 'products', $params);
@@ -151,7 +168,7 @@ class PrestaShopApiClient extends AbstractApiClient
     protected function formatProductData(array $data, array $existing = []): array
     {
         return [
-            'reference' => $data['sku'],
+            'reference' => $this->getPrefixedSku($data['sku']),
             'name' => [['language' => 1, 'value' => $data['name']]],
             'description' => [['language' => 1, 'value' => $data['description'] ?? '']],
             'price' => $data['price'],

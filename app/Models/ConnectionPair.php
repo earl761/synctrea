@@ -42,7 +42,7 @@ class ConnectionPair extends Model
     public function products(): BelongsToMany
     {
         return $this->belongsToMany(Product::class)
-            ->withPivot(['catalotatus', 'price_override'])
+            ->withPivot(['catalog_status', 'price_override'])
             ->withTimestamps();
     }
 

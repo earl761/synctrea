@@ -31,6 +31,8 @@ class Product extends Model
         'status',
         'specifications',
         'dimensions',
+        'map_price',
+        'currency_code',
         'images',
         'metadata',
         'catalog_data',
@@ -39,7 +41,15 @@ class Product extends Model
         'is_discontinued',
         'is_direct_ship',
         'has_warranty',
-        'synced_at'
+        'synced_at',
+        'weight',
+        'weight_unit',
+        'height',
+        'width',
+        'length',
+        'net_weight',
+        'dimension_unit',
+        'is_bulk_freight',
     ];
 
     protected $casts = [

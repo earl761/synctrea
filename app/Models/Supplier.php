@@ -8,6 +8,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Services\Api\IngramMicroApiClient;
 use App\Services\Api\DHApiClient;
+use League\Flysystem\Filesystem;
+use League\Flysystem\PhpseclibV2\SftpAdapter;
+use League\Flysystem\PhpseclibV2\SftpConnectionProvider;
 
 class Supplier extends Model
 {
@@ -28,7 +31,7 @@ class Supplier extends Model
     ];
 
     protected $casts = [
-        'credentials' => 'encrypted:array',
+        'credentials' => 'json',
         'settings' => 'encrypted:array',
         'is_active' => 'boolean',
     ];
@@ -74,5 +77,34 @@ class Supplier extends Model
     public function isIngramMicro(): bool
     {
         return $this->type === self::TYPE_INGRAM_MICRO;
+    }
+
+    // SFTP-related methods
+    public function getSftpConnection(): Filesystem
+    {
+        if (!$this->credentials || empty($this->credentials['sftp_host'])) {
+            throw new \Exception('SFTP credentials not configured');
+        }
+
+        return new Filesystem(new SftpAdapter(
+            new SftpConnectionProvider(
+                $this->credentials['sftp_host'],
+                $this->credentials['sftp_username'],
+                $this->credentials['sftp_password']
+            )
+        ));
+    }
+
+    public function hasSftpCredentials(): bool
+    {
+        return $this->credentials && 
+            !empty($this->credentials['sftp_host']) && 
+            !empty($this->credentials['sftp_username']) && 
+            !empty($this->credentials['sftp_password']);
+    }
+
+    public function getSftpPath(): string
+    {
+        return $this->credentials['sftp_path'] ?? '/PRICE.ZIP';
     }
 }

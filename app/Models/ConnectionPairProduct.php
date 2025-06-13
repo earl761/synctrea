@@ -32,6 +32,7 @@ class ConnectionPairProduct extends Model
         'price', // Base price from supplier
         'fila_price', // List price
         'stock',
+        'weight',
         'part_number',
         'catalog_status',
         'sync_status',
@@ -40,13 +41,16 @@ class ConnectionPairProduct extends Model
         'price_override',
         'final_price', // Calculated final price after all rules
         'price_rule_secondary_type',
-        'price_rule_secondary_value'
+        'price_rule_secondary_value',
+        'sync_error',
+        'last_sync_attempt'
     ];
 
     protected $casts = [
         'price' => 'decimal:2',
         'fila_price' => 'decimal:2',
         'stock' => 'integer',
+        'weight' => 'decimal:2',
         'price_override' => 'decimal:2',
         'final_price' => 'decimal:2',
         'price_rule_secondary_value' => 'decimal:2'
@@ -206,4 +210,4 @@ class ConnectionPairProduct extends Model
     {
         return (float) $this->final_price;
     }
-} 
+}

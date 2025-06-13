@@ -7,7 +7,8 @@
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        <title>{{ config('app.name') }}</title>
+        <title>{{ $title ?? config('app.name') }}</title>
+        <meta name="description" content="{{ $metaDescription ?? config('app.name') }}">
 
         {{-- Search Engine Indexing Control --}}
         @php
@@ -27,6 +28,9 @@
 
         @filamentStyles
         @vite('resources/css/app.css')
+        
+        <!-- AOS Animations -->
+        <link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
     </head>
 
     <body class="antialiased">
@@ -34,6 +38,9 @@
         <x-navigation />
 
         {{ $slot }}
+
+        <!-- Footer -->
+        <x-layouts.footer />
 
         <!-- Flash Messages -->
         @if (session('success'))
@@ -68,6 +75,18 @@
         @endif
 
         @livewire('notifications')
+
+        <!-- Alpine & AOS -->
+        <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                AOS.init({
+                    duration: 800,
+                    easing: 'ease-out',
+                    once: true
+                });
+            });
+        </script>
 
         @filamentScripts
         @vite('resources/js/app.js')

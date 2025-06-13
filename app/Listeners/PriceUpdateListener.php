@@ -14,14 +14,16 @@ class PriceUpdateListener
             $product = null;
             $pricingRule = null;
             
-            // Check if event has model property
-            if (!property_exists($event, 'model')) {
+            $model = null;
+            // Check if event has a model (support both Eloquent and custom events)
+            if (method_exists($event, 'getModel')) {
+                $model = $event->getModel();
+            } elseif (property_exists($event, 'model')) {
+                $model = $event->model;
+            } else {
                 Log::warning('Price update event received without model property');
                 return;
             }
-            
-            $model = $event->model;
-            
             // Ensure model is not null
             if (!$model) {
                 Log::warning('Price update event received with null model');

@@ -40,7 +40,13 @@ class SyncConnectionPairProductFields extends Command
                     try {
                         foreach ($connectionPairProducts as $cpp) {
                             if (!$cpp->product) {
-                                $this->warn("No product found for connection pair product ID: {$cpp->id}");
+                                if ($isDryRun) {
+                                    Log::info("Would delete connection pair product (no matching product)", [
+                                        'id' => $cpp->id,
+                                    ]);
+                                } else {
+                                    $cpp->delete();
+                                }
                                 $errors++;
                                 $bar->advance();
                                 continue;

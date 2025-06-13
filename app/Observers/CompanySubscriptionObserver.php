@@ -14,7 +14,7 @@ class CompanySubscriptionObserver
     {
         // If company is created with an active subscription
         if ($company->subscription_status === 'active') {
-            $company->notify(new SubscriptionConfirmation($company, 'created'));
+            $this->sendNotification($company, 'created');
         }
     }
 
@@ -30,16 +30,28 @@ class CompanySubscriptionObserver
 
             // Handle subscription status changes
             if ($newStatus === 'active' && $oldStatus !== 'active') {
-                $company->notify(new SubscriptionConfirmation($company, 'created'));
+                $this->sendNotification($company, 'created');
             } elseif ($newStatus === 'cancelled') {
-                $company->notify(new SubscriptionConfirmation($company, 'cancelled'));
+                $this->sendNotification($company, 'cancelled');
             }
         }
 
         // Check if subscription package changed
         if ($company->wasChanged('subscription_package_id') && $company->subscription_status === 'active') {
-            $company->notify(new SubscriptionConfirmation($company, 'updated'));
+            $this->sendNotification($company, 'updated');
         }
+    }
+
+    /**
+     * Send notification to the company.
+     * 
+     * @param Company $company
+     * @param string $action
+     * @return void
+     */
+    public function sendNotification(Company $company, string $action): void
+    {
+        $company->notify(new SubscriptionConfirmation($company, $action));
     }
 
     /**

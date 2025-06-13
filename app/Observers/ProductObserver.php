@@ -12,16 +12,16 @@ use Illuminate\Support\Facades\DB;
 
 class ProductObserver
 {
-    protected $syncFields = [
-        'sku' => 'sku',
-        'name' => 'name',
-        'upc' => 'upc',
-        'condition' => 'condition',
-        'part_number' => 'part_number',
-        'cost_price' => 'price',
-        'retail_price' => 'fila_price',
-        'stock_quantity' => 'stock'
-       
+    protected $relevantFields = [
+        'name',
+        'sku',
+        'upc',
+        'condition',
+        'part_number',
+        'cost_price',
+        'retail_price',
+        'stock_quantity',
+        'weight'
     ];
 
     public function created(Product $product)
@@ -31,209 +31,201 @@ class ProductObserver
             'supplier_id' => $product->supplier_id
         ]);
 
-        $this->syncToConnectionPairs($product);
+        try {
+            // Find all active connection pairs for this supplier
+            $connectionPairs = ConnectionPair::where('supplier_id', $product->supplier_id)
+                ->where('is_active', true)
+                ->get();
+
+            if ($connectionPairs->isEmpty()) {
+                Log::info('No active connection pairs found for supplier', [
+                    'supplier_id' => $product->supplier_id
+                ]);
+                return;
+            }
+
+            DB::beginTransaction();
+
+            foreach ($connectionPairs as $connectionPair) {
+                // Create connection pair product with all necessary fields
+                $connectionPairProduct = ConnectionPairProduct::create([
+                    'connection_pair_id' => $connectionPair->id,
+                    'product_id' => $product->id,
+                    'sku' => $connectionPair->sku_prefix . $product->sku,
+                    'name' => $product->name,
+                    'upc' => $product->upc,
+                    'condition' => $product->condition,
+                    'part_number' => $product->part_number,
+                    'price' => $product->cost_price,
+                    'fila_price' => $product->retail_price,
+                    'stock' => $product->stock_quantity,
+                    'weight' => $product->weight ?? 0,
+                    'catalog_status' => ConnectionPairProduct::STATUS_DEFAULT,
+                    'sync_status' => 'pending',
+                    'price_override_type' => ConnectionPairProduct::PRICE_OVERRIDE_NONE
+                ]);
+
+                Log::info('Created connection pair product', [
+                    'connection_pair_id' => $connectionPair->id,
+                    'product_id' => $product->id,
+                    'connection_pair_product_id' => $connectionPairProduct->id
+                ]);
+            }
+
+            DB::commit();
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to create connection pair products', [
+                'product_id' => $product->id,
+                'supplier_id' => $product->supplier_id,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+
+
     }
 
     public function updated(Product $product)
     {
-        $changedFields = array_intersect(
-            array_keys($this->syncFields),
-            array_keys($product->getDirty())
-        );
-        
-        if (empty($changedFields)) {
-            return;
-        }
+        // Check if any relevant fields were changed
+        $relevantFields = [
+            'name',
+            'sku',
+            'upc',
+            'condition',
+            'part_number',
+            'cost_price',
+            'retail_price',
+            'stock_quantity',
+            'weight'
+        ];
 
-        Log::info('Product updated, syncing changes to connection pairs', [
-            'product_id' => $product->id,
-            'changed_fields' => $changedFields
-        ]);
-
-        $this->syncToConnectionPairs($product, $changedFields);
-
-        // Check if in_catalog status changed
-        if ($product->wasChanged('in_catalog')) {
-            $oldStatus = $product->getOriginal('in_catalog');
-            $newStatus = $product->in_catalog;
-
-            Log::info('Product catalog status changed', [
-                'product_id' => $product->id,
-                'old_status' => $oldStatus,
-                'new_status' => $newStatus
-            ]);
-
-            // Handle deletion from catalog
-            if ($newStatus === 'pending_deletion' || $newStatus === 'deleted') {
-                $this->handleCatalogDeletion($product);
+        $hasRelevantChanges = false;
+        foreach ($relevantFields as $field) {
+            if ($product->wasChanged($field)) {
+                $hasRelevantChanges = true;
+                break;
             }
         }
-    }
 
-    public function deleted(Product $product)
-    {
-        DB::beginTransaction();
-        try {
-            ConnectionPairProduct::where('product_id', $product->id)->delete();
-            DB::commit();
-            
-            Log::info('Successfully deleted connection pair products', [
+        if (!$hasRelevantChanges) {
+            Log::info('No relevant fields changed, skipping sync', [
                 'product_id' => $product->id
             ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Failed to delete connection pair products', [
-                'product_id' => $product->id,
-                'error' => $e->getMessage()
-            ]);
-        }
-
-        // If product is deleted from our system, ensure it's removed from Amazon catalog
-        if ($product->in_catalog !== 'deleted') {
-            $this->handleCatalogDeletion($product);
-        }
-    }
-
-    protected function syncToConnectionPairs(Product $product, array $specificFields = null)
-    {
-        $connectionPairs = ConnectionPair::where('supplier_id', $product->supplier_id)
-            ->where('is_active', 1)
-            ->get();
-
-        if ($connectionPairs->isEmpty()) {
-            Log::info('No active connection pairs found for supplier', [
-                'supplier_id' => $product->supplier_id
-            ]);
             return;
         }
 
-        DB::beginTransaction();
+        Log::info('Product updated, syncing to connection pairs', [
+            'product_id' => $product->id,
+            'supplier_id' => $product->supplier_id,
+            'changed_fields' => $product->getDirty()
+        ]);
+
         try {
-            foreach ($connectionPairs as $connectionPair) {
-                $data = [
-                    'connection_pair_id' => $connectionPair->id,
-                    'product_id' => $product->id,
+            // Get all active connection pair products for this product
+            $connectionPairProducts = ConnectionPairProduct::where('product_id', $product->id)
+                ->whereHas('connectionPair', function ($query) {
+                    $query->where('is_active', true);
+                })
+                ->get();
+
+            if ($connectionPairProducts->isEmpty()) {
+                Log::info('No active connection pair products found for product', [
+                    'product_id' => $product->id
+                ]);
+                return;
+            }
+
+            DB::beginTransaction();
+
+            foreach ($connectionPairProducts as $connectionPairProduct) {
+                $updates = [
+                    'name' => $product->name,
+                    'upc' => $product->upc,
+                    'condition' => $product->condition,
+                    'part_number' => $product->part_number,
+                    'price' => $product->cost_price,
+                    'fila_price' => $product->retail_price,
+                    'stock' => $product->stock_quantity,
+                    'weight' => $product->weight ?? 0,
+                    'sync_status' => 'pending'
                 ];
 
-                $attributes = [
-                    'catalog_status' => ConnectionPairProduct::STATUS_DEFAULT,
-                    'price_override_type' => 'none',
-                ];
-
-                if ($specificFields) {
-                    // Update specific fields only
-                    $updateData = $this->prepareUpdateData($product, $specificFields);
-                    $attributes = array_merge($attributes, $updateData);
-                } else {
-                    // Update or create with all fields
-                    foreach ($this->syncFields as $productField => $connectionField) {
-                        $attributes[$connectionField] = $product->$productField;
-                    }
+                // Only update SKU if product SKU changed (to preserve custom SKU prefixes)
+                if ($product->wasChanged('sku')) {
+                    $updates['sku'] = $connectionPairProduct->connectionPair->sku_prefix . $product->sku;
                 }
 
-                ConnectionPairProduct::updateOrCreate($data, $attributes);
+                $connectionPairProduct->update($updates);
+
+                Log::info('Updated connection pair product', [
+                    'connection_pair_product_id' => $connectionPairProduct->id,
+                    'product_id' => $product->id,
+                    'updated_fields' => array_keys($updates)
+                ]);
             }
 
             DB::commit();
-            
-            Log::info('Successfully synced connection pair products', [
-                'product_id' => $product->id,
-                'operation' => $specificFields ? 'update' : 'create/update',
-                'affected_fields' => $specificFields ?? 'all'
-            ]);
+
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Failed to sync connection pair products', [
+            Log::error('Failed to update connection pair products', [
                 'product_id' => $product->id,
-                'operation' => $specificFields ? 'update' : 'create/update',
                 'error' => $e->getMessage()
             ]);
             throw $e;
         }
     }
 
-    protected function prepareUpdateData(Product $product, array $changedFields): array
+    public function deleted(Product $product)
     {
-        $updateData = [];
-        foreach ($changedFields as $field) {
-            if (isset($this->syncFields[$field])) {
-                $updateData[$this->syncFields[$field]] = $product->$field;
-            }
-        }
-        return $updateData;
-    }
+        Log::info('Product deleted, cleaning up connection pair products', [
+            'product_id' => $product->id,
+            'supplier_id' => $product->supplier_id
+        ]);
 
-    protected function prepareBulkData(Product $product, $connectionPairs): array
-    {
-        return $connectionPairs->map(function ($connectionPair) use ($product) {
-            $data = [
-                'connection_pair_id' => $connectionPair->id,
-                'product_id' => $product->id,
-                'catalog_status' => ConnectionPairProduct::STATUS_DEFAULT,
-                'price_override_type' => 'none',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-
-            foreach ($this->syncFields as $productField => $connectionField) {
-                $data[$connectionField] = $product->$productField;
-            }
-
-            return $data;
-        })->toArray();
-    }
-
-    public function saved(Product $product): void
-    {
-        if ($product->wasChanged(['cost_price', 'retail_price', 'supplier_id'])) {
-            Event::dispatch(new \stdClass(['model' => $product]));
-        }
-    }
-
-    /**
-     * Handle deletion from Amazon catalog
-     */
-    private function handleCatalogDeletion(Product $product): void
-    {
         try {
-            // Get the connection pair associated with the product
-            $connectionPair = $product->connectionPair;
-            if (!$connectionPair) {
-                Log::error('No connection pair found for product', [
-                    'product_id' => $product->id
-                ]);
-                return;
+            DB::beginTransaction();
+
+            // Get all connection pair products for this product
+            $connectionPairProducts = ConnectionPairProduct::where('product_id', $product->id)->get();
+
+            foreach ($connectionPairProducts as $connectionPairProduct) {
+                // If the product is in catalog, mark it for deletion
+                if ($connectionPairProduct->catalog_status === ConnectionPairProduct::STATUS_IN_CATALOG) {
+                    $connectionPairProduct->update([
+                        'catalog_status' => 'pending_deletion',
+                        'sync_status' => 'pending'
+                    ]);
+
+                    Log::info('Marked connection pair product for deletion from catalog', [
+                        'connection_pair_product_id' => $connectionPairProduct->id,
+                        'product_id' => $product->id
+                    ]);
+                } else {
+                    // If not in catalog, soft delete immediately
+                    $connectionPairProduct->delete();
+
+                    Log::info('Soft deleted connection pair product', [
+                        'connection_pair_product_id' => $connectionPairProduct->id,
+                        'product_id' => $product->id
+                    ]);
+                }
             }
 
-            // Initialize Amazon API client
-            $amazonClient = new AmazonApiClient($connectionPair);
+            DB::commit();
 
-            // Attempt to delete from Amazon catalog
-            $deleted = $amazonClient->deleteFromSellerCatalog($product);
-
-            if ($deleted) {
-                // Update status to fully deleted
-                $product->update([
-                    'in_catalog' => 'deleted',
-                    'catalog_deletion_at' => now()
-                ]);
-
-                Log::info('Product successfully deleted from Amazon catalog', [
-                    'product_id' => $product->id,
-                    'connection_pair_id' => $connectionPair->id
-                ]);
-            }
         } catch (\Exception $e) {
-            Log::error('Failed to delete product from Amazon catalog', [
+            DB::rollBack();
+            Log::error('Failed to cleanup connection pair products', [
                 'product_id' => $product->id,
                 'error' => $e->getMessage()
             ]);
-
-            // Set status to indicate failed deletion
-            $product->update([
-                'in_catalog' => 'deletion_failed',
-                'catalog_deletion_error' => $e->getMessage()
-            ]);
+            throw $e;
         }
     }
+
+
 }
