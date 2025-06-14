@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages\Setting;
 
+use App\Filament\Clusters\Settings;
 use App\Services\FileService;
 use App\Settings\GeneralSettings;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
@@ -18,9 +19,12 @@ use function Filament\Support\is_app_url;
 class ManageGeneral extends SettingsPage
 {
     use HasPageShield;
+    
+    protected static ?string $cluster = Settings::class;
+    
     protected static string $settings = GeneralSettings::class;
 
-    protected static ?int $navigationSort = 99;
+    protected static ?int $navigationSort = 1;
     protected static ?string $navigationIcon = 'fluentui-settings-20';
 
     /**
@@ -204,10 +208,7 @@ class ManageGeneral extends SettingsPage
         }
     }
 
-    public static function getNavigationGroup(): ?string
-    {
-        return __("menu.nav_group.settings");
-    }
+
 
     public static function getNavigationLabel(): string
     {

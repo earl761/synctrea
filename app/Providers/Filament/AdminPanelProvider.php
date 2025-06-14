@@ -50,20 +50,8 @@ class AdminPanelProvider extends PanelProvider
             ->sidebarCollapsibleOnDesktop()
             ->navigationGroups([
                 Navigation\NavigationGroup::make()
-                    ->label(__('menu.nav_group.content'))
-                    ->collapsible(false),
-                Navigation\NavigationGroup::make()
-                    ->label(__('menu.nav_group.access'))
-                    ->collapsible(false),
-                Navigation\NavigationGroup::make()
                     ->label(__('menu.nav_group.sites'))
-                    ->collapsed(),
-                Navigation\NavigationGroup::make()
-                    ->label(__('menu.nav_group.settings'))
-                    ->collapsed(),
-                Navigation\NavigationGroup::make()
-                    ->label(__('menu.nav_group.activities'))
-                    ->collapsed(),
+                    ->icon('heroicon-o-globe-alt'),
             ])
             ->navigationItems([
                 Navigation\NavigationItem::make('Log Viewer') // !! To-Do: lang
@@ -74,11 +62,12 @@ class AdminPanelProvider extends PanelProvider
                     ->sort(99),
             ])
             ->viteTheme('resources/css/filament/admin/theme.css')
-            ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
+            ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->resources([
                 config('filament-logger.activity_resource')
             ])
-            ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
+            ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
+            ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\Filament\Clusters')
             ->pages([
                 Pages\Dashboard::class,
             ])

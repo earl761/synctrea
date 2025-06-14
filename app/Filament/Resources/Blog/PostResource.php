@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Blog;
 
+use App\Filament\Clusters\Content;
 use App\Filament\Resources\Blog\PostResource\Pages;
 use App\Models\Blog\Post;
 use Filament\Forms;
@@ -24,9 +25,11 @@ class PostResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'title';
 
+    protected static ?string $cluster = Content::class;
+    
     protected static ?string $navigationIcon = 'fluentui-news-20';
 
-    protected static ?int $navigationSort = 0;
+    protected static ?int $navigationSort = 4;
 
     public static function form(Form $form): Form
     {
@@ -160,10 +163,7 @@ class PostResource extends Resource
         ];
     }
 
-    public static function getNavigationGroup(): ?string
-    {
-        return __("menu.nav_group.blog");
-    }
+
 
     public static function getNavigationBadge(): ?string
     {

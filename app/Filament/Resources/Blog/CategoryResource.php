@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Blog;
 
+use App\Filament\Clusters\Content;
 use App\Filament\Resources\Blog\CategoryResource\Pages;
 use App\Models\Blog\Category;
 use Filament\Forms;
@@ -22,8 +23,11 @@ class CategoryResource extends Resource
 
     protected static ?string $slug = 'blog/categories';
 
-    protected static ?int $navigationSort = -1;
+    protected static ?string $cluster = Content::class;
+    
+    protected static ?int $navigationSort = 5;
     protected static ?string $navigationIcon = 'fluentui-stack-20';
+    protected static ?string $navigationLabel = 'Blog Categories';
 
     public static function form(Form $form): Form
     {
@@ -125,8 +129,5 @@ class CategoryResource extends Resource
         ];
     }
 
-    public static function getNavigationGroup(): ?string
-    {
-        return __("menu.nav_group.blog");
-    }
+
 }

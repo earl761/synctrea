@@ -2,18 +2,16 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Clusters\Content;
 use Datlechin\FilamentMenuBuilder\Resources\MenuResource as BaseMenuResource;
 
 class MenuResource extends BaseMenuResource
 {
-    protected static ?int $navigationSort = 0;
+    protected static ?string $cluster = Content::class;
+    
+    protected static ?int $navigationSort = 1;
 
     protected static ?string $navigationIcon = 'fluentui-navigation-16';
-
-    public static function getNavigationGroup(): ?string
-    {
-        return __("menu.nav_group.sites");
-    }
 
     public static function shouldRegisterNavigation(): bool
     {

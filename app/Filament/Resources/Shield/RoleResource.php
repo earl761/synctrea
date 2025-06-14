@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Shield;
 
+use App\Filament\Clusters\Settings;
 use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
 use BezhanSalleh\FilamentShield\Facades\FilamentShield;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
@@ -23,6 +24,8 @@ class RoleResource extends Resource implements HasShieldPermissions
 {
     protected static ?string $recordTitleAttribute = 'name';
     protected static $permissionsCollection;
+    
+    protected static ?string $cluster = Settings::class;
 
     public static function getPermissionPrefixes(): array
     {
@@ -159,12 +162,7 @@ class RoleResource extends Resource implements HasShieldPermissions
         return Utils::isResourceNavigationRegistered();
     }
 
-    public static function getNavigationGroup(): ?string
-    {
-        return Utils::isResourceNavigationGroupEnabled()
-            ? __("menu.nav_group.access")
-            : '';
-    }
+
 
     public static function getNavigationLabel(): string
     {
@@ -178,7 +176,7 @@ class RoleResource extends Resource implements HasShieldPermissions
 
     public static function getNavigationSort(): ?int
     {
-        return Utils::getResourceNavigationSort();
+        return 11;
     }
 
     public static function getSlug(): string

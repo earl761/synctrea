@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Clusters\Content;
 use App\Filament\Resources\BannerCategoryResource\Pages;
 use App\Models\BannerCategory;
 use Filament\Forms;
@@ -19,9 +20,11 @@ class BannerCategoryResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
-    protected static ?int $navigationSort = -1;
+    protected static ?string $cluster = Content::class;
+    
+    protected static ?int $navigationSort = 3;
     protected static ?string $navigationIcon = 'fluentui-stack-20';
-    protected static ?string $navigationLabel = 'Categories';
+    protected static ?string $navigationLabel = 'Banner Categories';
    
 
     public static function form(Form $form): Form
@@ -130,8 +133,5 @@ class BannerCategoryResource extends Resource
         ];
     }
 
-    public static function getNavigationGroup(): ?string
-    {
-        return __("menu.nav_group.banner");
-    }
+
 }

@@ -14,6 +14,9 @@ return [
     /** Sort order, if shown. No effect, if navigation_enabled it set to false. */
     'navigation_sort' => 98,
 
+    /** Navigation group */
+    'navigation_group' => 'Administration',
+
     /** Whether to show a navigation badge. No effect, if navigation_enabled it set to false. */
     'navigation_badge' => false,
 

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Clusters\Content;
 use App\Filament\Resources\BannerResource\Pages;
 use App\Models\Banner;
 use Filament\Forms;
@@ -21,7 +22,9 @@ class BannerResource extends Resource
     protected static ?string $model = Banner::class;
     protected static int $globalSearchResultsLimit = 10;
 
-    protected static ?int $navigationSort = -1;
+    protected static ?string $cluster = Content::class;
+    
+    protected static ?int $navigationSort = 2;
     protected static ?string $navigationIcon = 'fluentui-image-shadow-24';
 
     protected static function getLastSortValue(): int
@@ -251,10 +254,7 @@ class BannerResource extends Resource
         ];
     }
 
-    public static function getNavigationGroup(): ?string
-    {
-        return __("menu.nav_group.banner");
-    }
+
 
     public static function getNavigationBadge(): ?string
     {

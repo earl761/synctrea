@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Clusters\Settings;
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
 use App\Settings\MailSettings;
@@ -36,8 +37,10 @@ class UserResource extends Resource
     protected static ?string $model = User::class;
     protected static int $globalSearchResultsLimit = 20;
 
-    protected static ?int $navigationSort = 2;
-    protected static ?string $navigationIcon = 'heroicon-o-users';
+    protected static ?string $cluster = Settings::class;
+    
+    protected static ?int $navigationSort = 10;
+    protected static ?string $navigationIcon = 'fluentui-people-20';
     protected static ?string $navigationGroup = 'Administration';
 
     protected static ?string $recordTitleAttribute = 'name';
@@ -182,10 +185,7 @@ class UserResource extends Resource
         ];
     }
 
-    public static function getNavigationGroup(): ?string
-    {
-        return __("menu.nav_group.access");
-    }
+
 
     public static function doResendEmailVerification($settings = null, $user): void
     {

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages\Setting;
 
+use App\Filament\Clusters\Settings;
 use App\Settings\StripeSettings;
 use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Section;
@@ -10,16 +11,22 @@ use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\SettingsPage;
+use Filament\Support\Facades\FilamentView;
+use BezhanSalleh\FilamentShield\Traits\HasPageShield;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Auth;
 
 class ManageStripe extends SettingsPage
 {
-    protected static ?string $navigationIcon = 'heroicon-o-credit-card';
-    protected static ?string $navigationGroup = 'Settings';
+    use HasPageShield;
+
+    protected static ?string $cluster = Settings::class;
+    
+    protected static ?string $navigationIcon = 'fluentui-payment-20';
     protected static ?string $title = 'Stripe Settings';
     protected static ?string $navigationLabel = 'Stripe';
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 7;
 
     protected static string $settings = StripeSettings::class;
 
@@ -81,4 +88,4 @@ class ManageStripe extends SettingsPage
             ->success()
             ->send();
     }
-} 
+}

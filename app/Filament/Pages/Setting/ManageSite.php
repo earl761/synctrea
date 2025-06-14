@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages\Setting;
 
+use App\Filament\Clusters\Settings;
 use App\Settings\SiteSettings;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 use Filament\Forms;
@@ -16,10 +17,14 @@ use function Filament\Support\is_app_url;
 class ManageSite extends SettingsPage
 {
     use HasPageShield;
+
+    protected static ?string $cluster = Settings::class;
+    
+    protected static ?string $navigationIcon = 'fluentui-globe-20';
+
     protected static string $settings = SiteSettings::class;
 
-    protected static ?int $navigationSort = 1;
-    protected static ?string $navigationIcon = 'heroicon-o-globe-alt';
+    protected static ?int $navigationSort = 3;
 
     /**
      * @var array<string, mixed> | null
@@ -219,10 +224,7 @@ class ManageSite extends SettingsPage
         }
     }
 
-    public static function getNavigationGroup(): ?string
-    {
-        return __("menu.nav_group.sites");
-    }
+
 
     public static function getNavigationLabel(): string
     {

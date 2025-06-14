@@ -16,8 +16,8 @@ return [
         'exclude' => [
             //App\Filament\Resources\UserResource::class,
         ],
-        'cluster' => null,
-        'navigation_group' => 'Activities',
+        'cluster' => \App\Filament\Clusters\Settings::class,
+        'navigation_group' => null,
     ],
 
     'access' => [

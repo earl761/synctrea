@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages\Setting;
 
+use App\Filament\Clusters\Settings;
 use App\Mail\TestMail;
 use App\Settings\MailSettings;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
@@ -19,10 +20,12 @@ class ManageMail extends SettingsPage
 {
     use HasPageShield;
 
+    protected static ?string $cluster = Settings::class;
+    
     protected static string $settings = MailSettings::class;
 
-    protected static ?int $navigationSort = 99;
-    protected static ?string $navigationIcon = 'fluentui-mail-settings-20';
+    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationIcon = 'fluentui-mail-20';
 
     /**
      * @var array<string, mixed> | null
@@ -188,10 +191,7 @@ class ManageMail extends SettingsPage
                 ->send();
     }
 
-    public static function getNavigationGroup(): ?string
-    {
-        return __("menu.nav_group.settings");
-    }
+
 
     public static function getNavigationLabel(): string
     {
