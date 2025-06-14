@@ -18,8 +18,8 @@ class SyncIngramMicroProductDetailsJob implements ShouldQueue
 
     public $tries = 3;
     public $maxExceptions = 3;
-    public $timeout = 120;
-    public $backoff = [10, 30, 60]; // Exponential backoff in seconds
+    public $timeout = 180; // Increased timeout for rate limiting delays
+    public $backoff = [30, 60, 120]; // Longer backoff for Ingram Micro rate limits
 
     public function __construct(
         private Product $product,

@@ -21,8 +21,8 @@ class SyncIngramMicroPriceAvailabilityBatchJob implements ShouldQueue
 
     public $tries = 3;
     public $maxExceptions = 3;
-    public $timeout = 300;
-    public $backoff = [30, 60, 120]; // Exponential backoff in seconds
+    public $timeout = 600; // Increased timeout for rate limiting delays
+    public $backoff = [60, 120, 300]; // Longer backoff for Ingram Micro rate limits
 
     public function __construct(
         private Collection $products,

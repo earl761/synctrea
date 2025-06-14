@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\Queue;
 class SyncIngramMicroPriceAvailabilityOptimizedCommand extends Command
 {
     protected $signature = 'ingram:sync-price-availability-optimized
-        {--batch-size=50 : Number of products to process per batch (max 50)}
-        {--max-concurrent=5 : Maximum number of concurrent batch jobs}
+        {--batch-size=25 : Number of products to process per batch (reduced for rate limiting, max 50)}
+        {--max-concurrent=2 : Maximum number of concurrent batch jobs (reduced for Ingram Micro rate limits)}
         {--force : Force sync even if there was a recent successful sync}
         {--queue=default : Queue name for batch jobs}
         {--details-queue=product-details : Queue name for product details jobs}';
@@ -60,8 +60,8 @@ class SyncIngramMicroPriceAvailabilityOptimizedCommand extends Command
                 }
             }
 
-            $batchSize = min((int) $this->option('batch-size'), 50);
-            $maxConcurrent = (int) $this->option('max-concurrent');
+            $batchSize = min((int) $this->option('batch-size') ?: 25, 50);
+            $maxConcurrent = (int) $this->option('max-concurrent') ?: 2;
             $queueName = $this->option('queue');
             $detailsQueueName = $this->option('details-queue');
 

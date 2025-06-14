@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 class SyncIngramMicroPriceAvailabilityCommand extends Command
 {
     protected $signature = 'ingram:sync-price-availability
-        {--chunk=50 : Number of products to process per API call}
+        {--chunk=25 : Number of products to process per API call (reduced for rate limiting)}
         {--force : Force sync even if there was a recent successful sync}'
     ;
 
@@ -55,7 +55,7 @@ class SyncIngramMicroPriceAvailabilityCommand extends Command
 
             $client->initialize();
 
-            $chunkSize = min((int) $this->option('chunk'), 50);
+            $chunkSize = min((int) $this->option('chunk') ?: 25, 50);
             $totalProcessed = 0;
             $totalUpdated = 0;
 
