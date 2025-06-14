@@ -17,11 +17,9 @@ class IngramMicroApiClient extends AbstractApiClient
     protected string $countryCode;
     protected string $apiSecret;
     protected int $maxRetries = 3;
-    protected int $retryDelay = 2000; // milliseconds - increased for Ingram Micro
-    protected int $requestsPerMinute = 30; // Reduced from 60 to be more conservative
-    protected int $minDelayBetweenRequests = 2; // seconds between requests
+    protected int $retryDelay = 1000; // milliseconds
+    protected int $requestsPerMinute = 60;
     protected array $requestTimestamps = [];
-    protected float $lastRequestTime = 0;
 
     public function __construct(Supplier $supplier)
     {
@@ -66,27 +64,15 @@ class IngramMicroApiClient extends AbstractApiClient
 
     protected function trackRequest(): void
     {
-        $currentTime = microtime(true);
         $this->requestTimestamps[] = time();
-        $this->lastRequestTime = $currentTime;
     }
 
     protected function waitForRateLimit(): void
     {
-        // Ensure minimum delay between requests
-        $timeSinceLastRequest = microtime(true) - $this->lastRequestTime;
-        if ($timeSinceLastRequest < $this->minDelayBetweenRequests) {
-            $sleepTime = $this->minDelayBetweenRequests - $timeSinceLastRequest;
-            Log::info('Ingram Micro rate limiting: waiting {sleep_time} seconds', ['sleep_time' => $sleepTime]);
-            usleep($sleepTime * 1000000); // Convert to microseconds
-        }
-
-        // Check if we've hit the requests per minute limit
         if ($this->shouldRateLimit()) {
             $oldestTimestamp = min($this->requestTimestamps);
-            $waitTime = 60 - (time() - $oldestTimestamp) + 1; // Add 1 second buffer
+            $waitTime = 60 - (time() - $oldestTimestamp);
             if ($waitTime > 0) {
-                Log::info('Ingram Micro rate limiting: waiting {wait_time} seconds for quota reset', ['wait_time' => $waitTime]);
                 sleep($waitTime);
             }
         }
@@ -107,32 +93,7 @@ class IngramMicroApiClient extends AbstractApiClient
                 $attempts++;
 
                 if ($attempts < $this->maxRetries && $this->shouldRetry($e)) {
-                    // Special handling for rate limit errors
-                    if ($e->getCode() === 429 || $e->getCode() === 500) {
-                        $message = $e->getMessage();
-                        if (strpos($message, 'Rate limit quota violation') !== false || 
-                            strpos($message, 'Quota limit exceeded') !== false) {
-                            // Wait longer for rate limit errors (30-60 seconds)
-                            $rateLimitDelay = 30 + ($attempts * 15); // 30, 45, 60 seconds
-                            Log::info('Ingram Micro rate limit hit, waiting {delay} seconds before retry {attempt}/{max}', [
-                                'delay' => $rateLimitDelay,
-                                'attempt' => $attempts,
-                                'max' => $this->maxRetries
-                            ]);
-                            sleep($rateLimitDelay);
-                            continue;
-                        }
-                    }
-                    
-                    // Standard exponential backoff for other errors
-                    $delay = ($this->retryDelay / 1000) * pow(2, $attempts - 1);
-                    Log::info('Retrying Ingram Micro API call in {delay} seconds (attempt {attempt}/{max})', [
-                        'delay' => $delay,
-                        'attempt' => $attempts,
-                        'max' => $this->maxRetries,
-                        'error' => $e->getMessage()
-                    ]);
-                    usleep($delay * 1000000);
+                    usleep($this->retryDelay * 1000 * pow(2, $attempts - 1));
                     continue;
                 }
 
@@ -146,20 +107,6 @@ class IngramMicroApiClient extends AbstractApiClient
     protected function shouldRetry(ApiException $e): bool
     {
         $retryableStatusCodes = [408, 429, 500, 502, 503, 504];
-        
-        // Special handling for Ingram Micro rate limit errors
-        if ($e->getCode() === 429 || $e->getCode() === 500) {
-            $message = $e->getMessage();
-            if (strpos($message, 'Rate limit quota violation') !== false || 
-                strpos($message, 'Quota limit exceeded') !== false) {
-                Log::warning('Ingram Micro rate limit detected, will retry with longer delay', [
-                    'error' => $message,
-                    'code' => $e->getCode()
-                ]);
-                return true;
-            }
-        }
-        
         return in_array($e->getCode(), $retryableStatusCodes);
     }
 

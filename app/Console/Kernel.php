@@ -14,13 +14,29 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // Run Ingram Micro feed update daily
+        // Run Ingram Micro feed update 3 times a day
         $schedule->command('ingram:feed-update')
-            ->name('ingram-feed-update')
+            ->name('ingram-feed-update-morning')
             ->dailyAt('06:00')
             ->withoutOverlapping()
             ->onFailure(function () {
-                Log::error('Ingram Micro feed update failed');
+                Log::error('Ingram Micro feed update failed (morning)');
+            });
+            
+        $schedule->command('ingram:feed-update')
+            ->name('ingram-feed-update-afternoon')
+            ->dailyAt('14:00')
+            ->withoutOverlapping()
+            ->onFailure(function () {
+                Log::error('Ingram Micro feed update failed (afternoon)');
+            });
+            
+        $schedule->command('ingram:feed-update')
+            ->name('ingram-feed-update-evening')
+            ->dailyAt('22:00')
+            ->withoutOverlapping()
+            ->onFailure(function () {
+                Log::error('Ingram Micro feed update failed (evening)');
             });
 
         // Run Amazon bulk catalog update every minute for testing

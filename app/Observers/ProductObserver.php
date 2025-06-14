@@ -5,6 +5,8 @@ namespace App\Observers;
 use App\Models\Product;
 use App\Models\ConnectionPair;
 use App\Models\ConnectionPairProduct;
+use App\Services\SyncService;
+use App\Services\SyncStatusManager;
 use App\Services\Api\AmazonApiClient;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
@@ -89,89 +91,13 @@ class ProductObserver
 
     public function updated(Product $product)
     {
-        // Check if any relevant fields were changed
-        $relevantFields = [
-            'name',
-            'sku',
-            'upc',
-            'condition',
-            'part_number',
-            'cost_price',
-            'retail_price',
-            'stock_quantity',
-            'weight'
-        ];
-
-        $hasRelevantChanges = false;
-        foreach ($relevantFields as $field) {
-            if ($product->wasChanged($field)) {
-                $hasRelevantChanges = true;
-                break;
-            }
-        }
-
-        if (!$hasRelevantChanges) {
-            Log::info('No relevant fields changed, skipping sync', [
-                'product_id' => $product->id
-            ]);
-            return;
-        }
-
-        Log::info('Product updated, syncing to connection pairs', [
-            'product_id' => $product->id,
-            'supplier_id' => $product->supplier_id,
-            'changed_fields' => $product->getDirty()
-        ]);
-
+        $syncService = app(SyncService::class);
+        $changedFields = array_keys($product->getDirty());
+        
         try {
-            // Get all active connection pair products for this product
-            $connectionPairProducts = ConnectionPairProduct::where('product_id', $product->id)
-                ->whereHas('connectionPair', function ($query) {
-                    $query->where('is_active', true);
-                })
-                ->get();
-
-            if ($connectionPairProducts->isEmpty()) {
-                Log::info('No active connection pair products found for product', [
-                    'product_id' => $product->id
-                ]);
-                return;
-            }
-
-            DB::beginTransaction();
-
-            foreach ($connectionPairProducts as $connectionPairProduct) {
-                $updates = [
-                    'name' => $product->name,
-                    'upc' => $product->upc,
-                    'condition' => $product->condition,
-                    'part_number' => $product->part_number,
-                    'price' => $product->cost_price,
-                    'fila_price' => $product->retail_price,
-                    'stock' => $product->stock_quantity,
-                    'weight' => $product->weight ?? 0,
-                    'sync_status' => 'pending'
-                ];
-
-                // Only update SKU if product SKU changed (to preserve custom SKU prefixes)
-                if ($product->wasChanged('sku')) {
-                    $updates['sku'] = $connectionPairProduct->connectionPair->sku_prefix . $product->sku;
-                }
-
-                $connectionPairProduct->update($updates);
-
-                Log::info('Updated connection pair product', [
-                    'connection_pair_product_id' => $connectionPairProduct->id,
-                    'product_id' => $product->id,
-                    'updated_fields' => array_keys($updates)
-                ]);
-            }
-
-            DB::commit();
-
+            $syncService->syncProductToConnectionPairs($product, $changedFields);
         } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Failed to update connection pair products', [
+            Log::error('Failed to sync product updates via SyncService', [
                 'product_id' => $product->id,
                 'error' => $e->getMessage()
             ]);
@@ -186,6 +112,8 @@ class ProductObserver
             'supplier_id' => $product->supplier_id
         ]);
 
+        $syncStatusManager = app(SyncStatusManager::class);
+
         try {
             DB::beginTransaction();
 
@@ -195,10 +123,12 @@ class ProductObserver
             foreach ($connectionPairProducts as $connectionPairProduct) {
                 // If the product is in catalog, mark it for deletion
                 if ($connectionPairProduct->catalog_status === ConnectionPairProduct::STATUS_IN_CATALOG) {
-                    $connectionPairProduct->update([
-                        'catalog_status' => 'pending_deletion',
-                        'sync_status' => 'pending'
-                    ]);
+                    $syncStatusManager->updateCatalogStatus(
+                        $connectionPairProduct, 
+                        SyncStatusManager::CATALOG_STATUS_PENDING_DELETION,
+                        'Product deleted'
+                    );
+                    $syncStatusManager->markAsPending($connectionPairProduct, 'Product deleted - needs catalog removal');
 
                     Log::info('Marked connection pair product for deletion from catalog', [
                         'connection_pair_product_id' => $connectionPairProduct->id,

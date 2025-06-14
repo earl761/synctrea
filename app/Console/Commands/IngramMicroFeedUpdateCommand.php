@@ -7,6 +7,7 @@ use App\Models\ConnectionPair;
 use App\Models\ConnectionPairProduct;
 use App\Models\Product;
 use App\Models\SyncLog;
+use App\Services\Api\IngramMicroApiClient;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -23,6 +24,7 @@ class IngramMicroFeedUpdateCommand extends Command
     protected Filesystem $sftp;
     protected string $localPath;
     protected ?ConnectionPair $connectionPair = null;
+    protected IngramMicroApiClient $ingramMicroApiClient;
 
     public function handle(): int
     {
@@ -37,6 +39,9 @@ class IngramMicroFeedUpdateCommand extends Command
 
                 
             }
+            
+            // Initialize Ingram Micro API client
+            $this->ingramMicroApiClient = new IngramMicroApiClient($supplier);
             Log::info('Syncing Ingram Micro catalog', [
                 'supplier' => $supplier->name,
                 'supplier_id' => $supplier->id,
@@ -234,6 +239,9 @@ class IngramMicroFeedUpdateCommand extends Command
        
             ]);
             $stats['created']++;
+            
+            // Call getPriceAndAvailability for newly created product
+            $this->updateProductPriceAndAvailability($productData['part_number']);
         }
 
         return $stats;
@@ -261,8 +269,19 @@ class IngramMicroFeedUpdateCommand extends Command
                 ]);
                 $stats['updated']++;
             } else {
-               
-
+                $newProduct = ConnectionPairProduct::create([
+                    'connection_pair_id' => $connectionPair->id,
+                    'sku' => $productData['ingram_sku'],
+                    'name' => $productData['name'],
+                    'part_number' => $productData['part_number'],
+                    'upc' => $productData['upc'],
+                    'cost_price' => $productData['price'],
+                    'stock_quantity' => $productData['stock'],
+                ]);
+                $stats['created']++;
+                
+                // Call getPriceAndAvailability for newly created product
+                $this->updateProductPriceAndAvailability($productData['part_number']);
             }
         }
 
@@ -318,5 +337,73 @@ class IngramMicroFeedUpdateCommand extends Command
         }
 
         return $deletedCount;
+    }
+    
+    /**
+     * Update product price and availability using Ingram Micro API
+     */
+    protected function updateProductPriceAndAvailability(string $partNumber): void
+    {
+        try {
+            $this->info("Fetching price and availability for part number: {$partNumber}");
+            
+            $response = $this->ingramMicroApiClient->getPriceAndAvailability([
+                'partNumber' => $partNumber
+            ]);
+            
+            if (!empty($response['data'])) {
+                foreach ($response['data'] as $productInfo) {
+                    $ingramSku = $productInfo['ingramPartNumber'] ?? null;
+                    
+                    if ($ingramSku) {
+                        // Update main Product table
+                        $product = Product::where('supplier_id', $this->connectionPair->supplier_id ?? $this->ingramMicroApiClient->getSupplier()->id)
+                            ->where('sku', $ingramSku)
+                            ->first();
+                            
+                        if ($product) {
+                            $updateData = [];
+                            
+                            // Update price if available
+                            if (isset($productInfo['pricing']['customerPrice'])) {
+                                $updateData['cost_price'] = (float) $productInfo['pricing']['customerPrice'];
+                            }
+                            
+                            // Update stock if available
+                            if (isset($productInfo['availability']['availabilityByWarehouse'])) {
+                                $totalStock = 0;
+                                foreach ($productInfo['availability']['availabilityByWarehouse'] as $warehouse) {
+                                    $totalStock += (int) ($warehouse['quantityAvailable'] ?? 0);
+                                }
+                                $updateData['stock_quantity'] = $totalStock;
+                            }
+                            
+                            if (!empty($updateData)) {
+                                $product->update($updateData);
+                                $this->info("Updated product {$ingramSku} with latest price and availability");
+                            }
+                        }
+                        
+                        // Update ConnectionPairProduct if we have a specific connection pair
+                        if ($this->connectionPair) {
+                            $connectionPairProduct = ConnectionPairProduct::where('connection_pair_id', $this->connectionPair->id)
+                                ->where('sku', $ingramSku)
+                                ->first();
+                                
+                            if ($connectionPairProduct && !empty($updateData)) {
+                                $connectionPairProduct->update($updateData);
+                                $this->info("Updated connection pair product {$ingramSku} with latest price and availability");
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to update price and availability for part number: ' . $partNumber, [
+                'error' => $e->getMessage(),
+                'part_number' => $partNumber
+            ]);
+            $this->warn("Failed to update price and availability for {$partNumber}: {$e->getMessage()}");
+        }
     }
 }

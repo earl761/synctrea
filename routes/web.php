@@ -21,6 +21,9 @@ Route::post(
     [App\Http\Controllers\StripeWebhookController::class, 'handleWebhook']
 )->name('cashier.webhook');
 
+// Sync dashboard is now handled by Filament admin panel
+// See App\Filament\Pages\SyncDashboard
+
 /*
 |--------------------------------------------------------------------------
 | Web Routes
