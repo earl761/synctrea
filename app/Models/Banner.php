@@ -58,3 +58,6 @@ class Banner extends Model implements HasMedia
     }
 
 }
+
+
+///TO BE USED FOR ADS
