@@ -19,6 +19,12 @@ use Filament\Tables\Actions\BulkAction;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Filament\Notifications\Notification;
+use Filament\Tables\Actions\Action;
+use App\Models\PricingRule;
+use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Grid;
 
 class ConnectionPairProductResource extends Resource
 {
@@ -99,19 +105,34 @@ class ConnectionPairProductResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->defaultPaginationPageOption(25)
+            ->defaultPaginationPageOption(50)
+            ->paginationPageOptions([25, 50, 100, 200])
             ->persistFiltersInSession()
             ->persistSortInSession()
+            ->defaultSort('id', 'desc')
+            ->striped()
+            ->extremePaginationLinks()
             ->description(function($livewire) {
                 $connectionPairId = request()->query('connection_pair_id');
                 if (!$connectionPairId) return null;
                 
-                $connectionPair = \App\Models\ConnectionPair::with(['supplier', 'destination'])->find($connectionPairId);
-                if (!$connectionPair) return null;
+                // Use cache to avoid repeated queries
+                $cacheKey = "connection_pair_header_{$connectionPairId}";
+                $headerData = cache()->remember($cacheKey, 300, function () use ($connectionPairId) {
+                    return \App\Models\ConnectionPair::query()
+                        ->select('id', 'supplier_id', 'destination_id')
+                        ->with([
+                            'supplier:id,name',
+                            'destination:id,name'
+                        ])
+                        ->find($connectionPairId);
+                });
+                
+                if (!$headerData) return null;
 
                 return new \Illuminate\Support\HtmlString(view('filament.components.connection-pair-header', [
-                    'supplier' => $connectionPair->supplier->name,
-                    'destination' => $connectionPair->destination->name,
+                    'supplier' => $headerData->supplier->name,
+                    'destination' => $headerData->destination->name,
                 ])->render());
             })
             ->headerActions([
@@ -179,10 +200,14 @@ class ConnectionPairProductResource extends Resource
                     ->label('UPC')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('product.name')
+                Tables\Columns\TextColumn::make('product_name')
                     ->label('Product Name')
-                    ->searchable()
-                    ->sortable(),
+                    ->searchable(query: function (Builder $query, string $search): Builder {
+                        return $query->where('products.name', 'like', "%{$search}%");
+                    })
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        return $query->orderBy('products.name', $direction);
+                    }),
                 Tables\Columns\TextColumn::make('condition')
                     ->badge()
                     ->colors([
@@ -333,9 +358,24 @@ class ConnectionPairProductResource extends Resource
                             );
                     }),
                 Tables\Filters\SelectFilter::make('brand')
-                    ->relationship('product', 'brand')
-                    ->searchable()
-                    ->preload(),
+                    ->options(function () {
+                        $connectionPairId = request()->query('connection_pair_id');
+                        if (!$connectionPairId) return [];
+                        
+                        return \App\Models\ConnectionPairProduct::query()
+                            ->leftJoin('products', 'connection_pair_product.product_id', '=', 'products.id')
+                            ->where('connection_pair_product.connection_pair_id', $connectionPairId)
+                            ->whereNotNull('products.brand')
+                            ->distinct()
+                            ->pluck('products.brand', 'products.brand')
+                            ->toArray();
+                    })
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when($data['value'], function ($query, $brand) {
+                            return $query->where('products.brand', $brand);
+                        });
+                    })
+                    ->searchable(),
             ])
             ->actions([
                 Tables\Actions\Action::make('queue')
@@ -352,18 +392,116 @@ class ConnectionPairProductResource extends Resource
                     ->icon('heroicon-o-check'),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
+                Action::make('create_pricing_rule')
+                    ->label('Create Pricing Rule')
+                    ->icon('heroicon-o-plus-circle')
+                    ->color('success')
+                    ->form([
+                        Section::make('Create Pricing Rule')
+                            ->description('Create a pricing rule for this connection pair')
+                            ->schema([
+                                Grid::make(2)
+                                    ->schema([
+                                        TextInput::make('name')
+                                            ->label('Rule Name')
+                                            ->required()
+                                            ->maxLength(255),
+                                        Select::make('rule_type')
+                                            ->label('Rule Type')
+                                            ->options([
+                                                'percentage' => 'Percentage',
+                                                'fixed_amount' => 'Fixed Amount',
+                                                'fixed_price' => 'Fixed Price',
+                                            ])
+                                            ->required()
+                                            ->reactive(),
+                                    ]),
+                                Grid::make(3)
+                                    ->schema([
+                                        TextInput::make('percentage_value')
+                                            ->label('Percentage (%)')
+                                            ->numeric()
+                                            ->suffix('%')
+                                            ->visible(fn (callable $get) => $get('rule_type') === 'percentage'),
+                                        TextInput::make('amount_value')
+                                            ->label('Amount')
+                                            ->numeric()
+                                            ->prefix('$')
+                                            ->visible(fn (callable $get) => $get('rule_type') === 'fixed_amount'),
+                                        TextInput::make('value')
+                                            ->label('Fixed Price')
+                                            ->numeric()
+                                            ->prefix('$')
+                                            ->visible(fn (callable $get) => $get('rule_type') === 'fixed_price'),
+                                    ]),
+                                TextInput::make('priority')
+                                    ->label('Priority')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->helperText('Higher numbers have higher priority'),
+                            ])
+                    ])
+                    ->action(function (array $data, $record) {
+                        try {
+                            PricingRule::create([
+                                'company_id' => $record->connectionPair->company_id,
+                                'name' => $data['name'],
+                                'type' => PricingRule::TYPE_GLOBAL_CONNECTION,
+                                'supplier_id' => $record->connectionPair->supplier_id,
+                                'destination_id' => $record->connectionPair->destination_id,
+                                'rule_type' => $data['rule_type'],
+                                'value' => $data['value'] ?? null,
+                                'percentage_value' => $data['percentage_value'] ?? null,
+                                'amount_value' => $data['amount_value'] ?? null,
+                                'priority' => $data['priority'] ?? 0,
+                                'is_active' => true,
+                            ]);
+
+                            Notification::make()
+                                ->success()
+                                ->title('Pricing rule created')
+                                ->body('The pricing rule has been created and will be applied to products in this connection pair.')
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Failed to create pricing rule')
+                                ->body('There was an error creating the pricing rule: ' . $e->getMessage())
+                                ->send();
+                        }
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\BulkAction::make('queue_selected')
-                        ->action(fn (Collection $records) => $records->each->update(['catalog_status' => ConnectionPairProduct::STATUS_QUEUED]))
+                        ->action(function (Collection $records) {
+                            $ids = $records->pluck('id')->toArray();
+                            ConnectionPairProduct::whereIn('id', $ids)
+                                ->update(['catalog_status' => ConnectionPairProduct::STATUS_QUEUED]);
+                            
+                            Notification::make()
+                                ->success()
+                                ->title('Products Queued')
+                                ->body(count($ids) . ' products have been queued successfully.')
+                                ->send();
+                        })
                         ->requiresConfirmation()
                         ->deselectRecordsAfterCompletion()
                         ->label('Queue Selected')
                         ->color('primary')
                         ->icon('heroicon-o-queue-list'),
                     Tables\Actions\BulkAction::make('move_to_catalog')
-                        ->action(fn (Collection $records) => $records->each->update(['catalog_status' => ConnectionPairProduct::STATUS_IN_CATALOG]))
+                        ->action(function (Collection $records) {
+                            $ids = $records->pluck('id')->toArray();
+                            ConnectionPairProduct::whereIn('id', $ids)
+                                ->update(['catalog_status' => ConnectionPairProduct::STATUS_IN_CATALOG]);
+                            
+                            Notification::make()
+                                ->success()
+                                ->title('Products Moved to Catalog')
+                                ->body(count($ids) . ' products have been moved to catalog successfully.')
+                                ->send();
+                        })
                         ->requiresConfirmation()
                         ->deselectRecordsAfterCompletion()
                         ->label('Move to Catalog')
@@ -390,15 +528,12 @@ class ConnectionPairProductResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()
-            ->with(['connectionPair.supplier', 'connectionPair.destination', 'product']);
-
         $connectionPairId = request()->query('connection_pair_id');
 
         // If not in query, try to get it from the route parameter (record)
         if (!$connectionPairId && request()->route('record')) {
             $recordId = request()->route('record');
-            $record = \App\Models\ConnectionPairProduct::find($recordId);
+            $record = \App\Models\ConnectionPairProduct::select('connection_pair_id')->find($recordId);
             if ($record) {
                 $connectionPairId = $record->connection_pair_id;
             }
@@ -414,6 +549,18 @@ class ConnectionPairProductResource extends Resource
             abort(403, 'No connection pair specified.');
         }
 
-        return $query->where('connection_pair_id', $connectionPairId);
+        return parent::getEloquentQuery()
+            ->select([
+                'connection_pair_product.*',
+                'products.name as product_name',
+                'products.brand as product_brand'
+            ])
+            ->leftJoin('products', 'connection_pair_product.product_id', '=', 'products.id')
+            ->where('connection_pair_product.connection_pair_id', $connectionPairId)
+            ->with([
+                'connectionPair:id,supplier_id,destination_id,company_id',
+                'connectionPair.supplier:id,name',
+                'connectionPair.destination:id,name'
+            ]);
     }
 }

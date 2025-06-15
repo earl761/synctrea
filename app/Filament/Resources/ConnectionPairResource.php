@@ -86,6 +86,88 @@ class ConnectionPairResource extends Resource
                                 ->default(true),
                         ])
                 ])
+                ->columnSpan('full'),
+
+            Card::make()
+                ->schema([
+                    \Filament\Forms\Components\Section::make('Pricing Rules')
+                        ->description('Configure pricing rules for this connection pair. These rules will be applied to all products in this connection.')
+                        ->schema([
+                            \Filament\Forms\Components\Toggle::make('create_pricing_rule')
+                                ->label('Create Pricing Rule')
+                                ->helperText('Enable this to create a pricing rule for this connection pair')
+                                ->reactive()
+                                ->default(false),
+
+                            Grid::make(2)
+                                ->schema([
+                                    TextInput::make('pricing_rule_name')
+                                        ->label('Rule Name')
+                                        ->placeholder('e.g., Standard Markup for Amazon')
+                                        ->maxLength(255)
+                                        ->visible(fn (callable $get) => $get('create_pricing_rule'))
+                                        ->required(fn (callable $get) => $get('create_pricing_rule')),
+
+                                    Select::make('pricing_rule_type')
+                                        ->label('Rule Type')
+                                        ->options([
+                                            PricingRule::RULE_TYPE_PERCENTAGE_MARKUP => 'Percentage Markup',
+                                            PricingRule::RULE_TYPE_FLAT_MARKUP => 'Flat Markup',
+                                            PricingRule::RULE_TYPE_PERCENTAGE_AMOUNT => 'Percentage + Amount',
+                                            PricingRule::RULE_TYPE_AMOUNT_PERCENTAGE => 'Amount + Percentage',
+                                        ])
+                                        ->visible(fn (callable $get) => $get('create_pricing_rule'))
+                                        ->required(fn (callable $get) => $get('create_pricing_rule'))
+                                        ->reactive(),
+
+                                    TextInput::make('pricing_rule_value')
+                                        ->label(fn (callable $get) => $get('pricing_rule_type') === PricingRule::RULE_TYPE_PERCENTAGE_MARKUP ? 'Percentage (%)' : 'Amount ($)')
+                                        ->numeric()
+                                        ->visible(fn (callable $get) => $get('create_pricing_rule') && in_array($get('pricing_rule_type'), [
+                                            PricingRule::RULE_TYPE_PERCENTAGE_MARKUP,
+                                            PricingRule::RULE_TYPE_FLAT_MARKUP
+                                        ]))
+                                        ->required(fn (callable $get) => $get('create_pricing_rule') && in_array($get('pricing_rule_type'), [
+                                            PricingRule::RULE_TYPE_PERCENTAGE_MARKUP,
+                                            PricingRule::RULE_TYPE_FLAT_MARKUP
+                                        ])),
+
+                                    TextInput::make('pricing_rule_percentage')
+                                        ->label('Percentage (%)')
+                                        ->numeric()
+                                        ->visible(fn (callable $get) => $get('create_pricing_rule') && in_array($get('pricing_rule_type'), [
+                                            PricingRule::RULE_TYPE_PERCENTAGE_AMOUNT,
+                                            PricingRule::RULE_TYPE_AMOUNT_PERCENTAGE
+                                        ]))
+                                        ->required(fn (callable $get) => $get('create_pricing_rule') && in_array($get('pricing_rule_type'), [
+                                            PricingRule::RULE_TYPE_PERCENTAGE_AMOUNT,
+                                            PricingRule::RULE_TYPE_AMOUNT_PERCENTAGE
+                                        ])),
+
+                                    TextInput::make('pricing_rule_amount')
+                                        ->label('Amount ($)')
+                                        ->numeric()
+                                        ->visible(fn (callable $get) => $get('create_pricing_rule') && in_array($get('pricing_rule_type'), [
+                                            PricingRule::RULE_TYPE_PERCENTAGE_AMOUNT,
+                                            PricingRule::RULE_TYPE_AMOUNT_PERCENTAGE
+                                        ]))
+                                        ->required(fn (callable $get) => $get('create_pricing_rule') && in_array($get('pricing_rule_type'), [
+                                            PricingRule::RULE_TYPE_PERCENTAGE_AMOUNT,
+                                            PricingRule::RULE_TYPE_AMOUNT_PERCENTAGE
+                                        ])),
+
+                                    TextInput::make('pricing_rule_priority')
+                                        ->label('Priority')
+                                        ->numeric()
+                                        ->default(0)
+                                        ->helperText('Lower numbers have higher priority')
+                                        ->visible(fn (callable $get) => $get('create_pricing_rule'))
+                                        ->required(fn (callable $get) => $get('create_pricing_rule')),
+                                ])
+                                ->visible(fn (callable $get) => $get('create_pricing_rule')),
+                        ])
+                ])
+                ->columnSpan('full')
         ]);
     }
 
