@@ -7,6 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Services\Api\AmazonSpApiClient;
+use App\Services\Api\PrestaShopApiClient;
+use App\Services\Api\NeweggApiClient;
 
 class Destination extends Model
 {
@@ -20,6 +23,7 @@ class Destination extends Model
         'api_key',
         'api_secret',
         'api_endpoint',
+        'seller_id',
         'credentials',
         'settings',
         'is_active',
@@ -36,6 +40,7 @@ class Destination extends Model
     // Constants for destination types
     public const TYPE_AMAZON = 'amazon';
     public const TYPE_PRESTASHOP = 'prestashop';
+    public const TYPE_NEWEGG = 'newegg';
 
     // Relationships
     public function suppliers()
@@ -67,6 +72,7 @@ class Destination extends Model
         return match($this->type) {
             self::TYPE_AMAZON => new AmazonSpApiClient($this),
             self::TYPE_PRESTASHOP => new PrestaShopApiClient($this),
+            self::TYPE_NEWEGG => new NeweggApiClient($this),
             default => throw new \Exception('Unsupported destination type'),
         };
     }
@@ -79,6 +85,11 @@ class Destination extends Model
     public function isPrestaShop(): bool
     {
         return $this->type === self::TYPE_PRESTASHOP;
+    }
+
+    public function isNewegg(): bool
+    {
+        return $this->type === self::TYPE_NEWEGG;
     }
 
     // Region helpers for Amazon

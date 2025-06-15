@@ -1,0 +1,44 @@
+[
+  {
+    "sku": "SAMPLE-ITEM-001",
+    "manufacturer": "Samsung",
+    "manufacturer_part_number": "MZ-V8V1T0B/AM",
+    "upc": "887276347486",
+    "price": 129.99,
+    "quantity": 25,
+    "shipping": "Default",
+    "condition": "New",
+    "activation_mark": "True",
+    "msrp": 149.99,
+    "map": 119.99,
+    "warranty": "Manufacturer Warranty"
+  },
+  {
+    "sku": "SAMPLE-ITEM-002",
+    "manufacturer": "Corsair",
+    "manufacturer_part_number": "CMK16GX4M2B3200C16",
+    "upc": "843591070621",
+    "price": 79.99,
+    "quantity": 50,
+    "shipping": "Free",
+    "condition": "New",
+    "activation_mark": "True",
+    "msrp": 99.99,
+    "warranty": "Limited Lifetime Warranty"
+  },
+  {
+    "sku": "SAMPLE-ITEM-003",
+    "manufacturer": "ASUS",
+    "manufacturer_part_number": "ROG-STRIX-RTX3070-O8G-GAMING",
+    "upc": "195553138888",
+    "price": 599.99,
+    "quantity": 5,
+    "shipping": "Default",
+    "condition": "New",
+    "activation_mark": "True",
+    "msrp": 699.99,
+    "map": 579.99,
+    "checkout_map": true,
+    "warranty": "3 Year Manufacturer Warranty"
+  }
+]

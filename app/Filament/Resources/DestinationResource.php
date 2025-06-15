@@ -57,18 +57,38 @@ class DestinationResource extends Resource
                                 ->options([
                                     'amazon' => 'Amazon SP-API',
                                     'prestashop' => 'PrestaShop',
+                                    'newegg' => 'Newegg Marketplace',
                                 ])
                                 ->reactive()
                                 ->afterStateUpdated(fn ($state, callable $set) => $set('credentials', [])),
 
                             TextInput::make('api_key')
                                 ->required()
-                                ->label(fn (callable $get) => $get('type') === 'amazon' ? 'AWS Access Key ID' : 'API Key'),
+                                ->label(fn (callable $get) => match($get('type')) {
+                                    'amazon' => 'AWS Access Key ID',
+                                    'newegg' => 'API Key',
+                                    default => 'API Key'
+                                }),
 
                             TextInput::make('api_secret')
-                                ->required(fn (callable $get) => $get('type') === 'amazon')
-                                ->label(fn (callable $get) => $get('type') === 'amazon' ? 'AWS Secret Access Key' : 'API Secret')
-                                ->visible(fn (callable $get) => $get('type') === 'amazon'),
+                                ->required(fn (callable $get) => in_array($get('type'), ['amazon', 'newegg']))
+                                ->label(fn (callable $get) => match($get('type')) {
+                                    'amazon' => 'AWS Secret Access Key',
+                                    'newegg' => 'Secret Key',
+                                    default => 'API Secret'
+                                })
+                                ->visible(fn (callable $get) => in_array($get('type'), ['amazon', 'newegg'])),
+
+                            TextInput::make('seller_id')
+                                ->required(fn (callable $get) => $get('type') === 'newegg')
+                                ->label('Seller ID')
+                                ->visible(fn (callable $get) => $get('type') === 'newegg'),
+
+                            TextInput::make('api_endpoint')
+                                ->required(fn (callable $get) => $get('type') === 'newegg')
+                                ->label('API Endpoint')
+                                ->placeholder('https://api.newegg.com or https://api.newegg.ca')
+                                ->visible(fn (callable $get) => $get('type') === 'newegg'),
 
                             KeyValue::make('credentials')
                                 ->required(fn (callable $get) => $get('type') === 'amazon')

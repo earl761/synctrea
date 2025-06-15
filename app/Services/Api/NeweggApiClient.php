@@ -17,7 +17,7 @@ class NeweggApiClient extends AbstractApiClient
     {
         $this->destination = $destination;
         $this->marketplace = str_contains($destination->api_endpoint, '.ca') ? 'NEWEGG_CA' : 'NEWEGG_US';
-        $this->baseUrl = rtrim($destination->api_endpoint, '/') . '/marketplace/api/v1';
+        $this->baseUrl = rtrim($destination->api_endpoint, '/') . '/marketplace';
         $this->apiKey = $destination->api_key;
         $this->secretKey = $destination->api_secret;
         $this->sellerId = $destination->seller_id;
@@ -29,17 +29,11 @@ class NeweggApiClient extends AbstractApiClient
             return;
         }
 
-        $timestamp = gmdate('Y-m-d\\TH:i:s\\Z');
-        $signature = hash_hmac('sha256', $this->sellerId . $timestamp, $this->secretKey);
-
         $this->setHeaders([
             'Content-Type' => 'application/json',
             'Accept' => 'application/json',
             'Authorization' => $this->apiKey,
-            'X-NEWEGG-MARKETPLACE' => $this->marketplace,
-            'X-NEWEGG-SELLERID' => $this->sellerId,
-            'X-NEWEGG-TIMESTAMP' => $timestamp,
-            'X-NEWEGG-SIGNATURE' => $signature,
+            'SecretKey' => $this->secretKey,
         ]);
 
         $this->setConfig([
@@ -52,22 +46,29 @@ class NeweggApiClient extends AbstractApiClient
 
     public function getProduct(string $sku): array
     {
-        $response = $this->request('GET', 'seller/inventory/item/' . $sku);
-        return $this->handleResponse($response)['Item'] ?? [];
+        $response = $this->request('POST', 'contentmgmt/item/inventory?sellerid=' . $this->sellerId, [
+            'RequestBody' => [
+                'GetInventoryRequest' => [
+                    'SellerPartNumber' => [$sku]
+                ]
+            ]
+        ]);
+        return $this->handleResponse($response)['ItemList'][0] ?? [];
     }
 
     public function getProducts(array $skus = []): array
     {
-        if (empty($skus)) {
-            $response = $this->request('GET', 'seller/inventory/item/list');
-        } else {
-            $response = $this->request('POST', 'seller/inventory/item/batch', [
-                'RequestBody' => [
-                    'SellerPartNumber' => $skus
-                ]
-            ]);
+        $requestData = [
+            'RequestBody' => [
+                'GetInventoryRequest' => []
+            ]
+        ];
+        
+        if (!empty($skus)) {
+            $requestData['RequestBody']['GetInventoryRequest']['SellerPartNumber'] = $skus;
         }
         
+        $response = $this->request('POST', 'contentmgmt/item/inventory?sellerid=' . $this->sellerId, $requestData);
         return $this->handleResponse($response)['ItemList'] ?? [];
     }
 
@@ -86,11 +87,13 @@ class NeweggApiClient extends AbstractApiClient
 
     public function updateInventory(string $sku, int $quantity): array
     {
-        $response = $this->request('PUT', 'seller/inventory/item/inventory', [
+        $response = $this->request('PUT', 'contentmgmt/item/inventoryandprice?sellerid=' . $this->sellerId, [
             'RequestBody' => [
-                'Item' => [
-                    'SellerPartNumber' => $sku,
-                    'Inventory' => $quantity,
+                'UpdateInventoryAndPriceRequest' => [
+                    'Item' => [[
+                        'SellerPartNumber' => $sku,
+                        'Inventory' => $quantity,
+                    ]]
                 ]
             ]
         ]);
@@ -177,5 +180,129 @@ class NeweggApiClient extends AbstractApiClient
         }
 
         return $baseData;
+    }
+
+    public function updatePrice(string $sku, float $price): array
+    {
+        $response = $this->request('PUT', 'contentmgmt/item/price?sellerid=' . $this->sellerId, [
+            'RequestBody' => [
+                'UpdatePriceRequest' => [
+                    'Item' => [[
+                        'SellerPartNumber' => $sku,
+                        'UnitPrice' => $price,
+                    ]]
+                ]
+            ]
+        ]);
+
+        return $this->handleResponse($response);
+    }
+
+    /**
+     * Submit existing item creation feed to Newegg
+     * This allows creating items by matching against existing items in Newegg catalog
+     * using ISBN, UPC, Manufacturer Part Number, or Newegg Item Number
+     */
+    public function submitExistingItemCreationFeed(array $items): array
+    {
+        $feedData = [
+            'DocumentVersion' => '2.0',
+            'MessageType' => 'BatchItemCreation',
+            'Item' => []
+        ];
+
+        foreach ($items as $item) {
+            $itemData = [
+                'SellerPartNumber' => $item['sku'],
+                'Manufacturer' => $item['manufacturer'],
+                'Currency' => $this->marketplace === 'NEWEGG_CA' ? 'CAD' : 'USD',
+                'SellingPrice' => (float) $item['price'],
+                'Shipping' => $item['shipping'] ?? 'Default',
+                'Inventory' => (int) $item['quantity'],
+                'ActivationMark' => $item['activation_mark'] ?? 'True',
+                'ItemCondition' => $item['condition'] ?? 'New'
+            ];
+
+            // Add identifier - at least one is required
+            if (!empty($item['manufacturer_part_number'])) {
+                $itemData['ManufacturerPartsNumber'] = $item['manufacturer_part_number'];
+            }
+            if (!empty($item['upc'])) {
+                $itemData['UPCOrISBN'] = $item['upc'];
+            }
+            if (!empty($item['newegg_item_number'])) {
+                $itemData['NeweggItemNumber'] = $item['newegg_item_number'];
+            }
+
+            // Optional fields
+            if (!empty($item['msrp'])) {
+                $itemData['MSRP'] = (float) $item['msrp'];
+            }
+            if (!empty($item['map'])) {
+                $itemData['MAP'] = (float) $item['map'];
+            }
+            if (isset($item['checkout_map'])) {
+                $itemData['CheckoutMAP'] = $item['checkout_map'] ? 'True' : 'False';
+            }
+            if (!empty($item['warranty'])) {
+                $itemData['WarrantyType'] = $item['warranty'];
+            }
+            if (!empty($item['return_policy'])) {
+                $itemData['ReturnPolicyOverride'] = $item['return_policy'];
+            }
+
+            $feedData['Item'][] = $itemData;
+        }
+
+        $response = $this->request('POST', 'datafeedmgmt/feeds/submitfeed?sellerid=' . $this->sellerId . '&requesttype=ITEM_DATA', [
+            'RequestBody' => $feedData
+        ]);
+
+        return $this->handleResponse($response);
+    }
+
+    public function getOrder(string $orderId): array
+    {
+        $response = $this->request('GET', 'ordermgmt/orderstatus/orders/' . $orderId . '?sellerid=' . $this->sellerId);
+        return $this->handleResponse($response)['OrderInfo'] ?? [];
+    }
+
+    public function getOrders(array $filters = []): array
+    {
+        $requestData = [
+            'RequestBody' => [
+                'GetOrderStatusRequest' => []
+            ]
+        ];
+        
+        if (!empty($filters['status'])) {
+            $requestData['RequestBody']['GetOrderStatusRequest']['OrderStatus'] = $filters['status'];
+        }
+        
+        if (!empty($filters['date_from'])) {
+            $requestData['RequestBody']['GetOrderStatusRequest']['OrderDateFrom'] = $filters['date_from'];
+        }
+        
+        if (!empty($filters['date_to'])) {
+            $requestData['RequestBody']['GetOrderStatusRequest']['OrderDateTo'] = $filters['date_to'];
+        }
+        
+        $response = $this->request('POST', 'ordermgmt/orderstatus?sellerid=' . $this->sellerId, $requestData);
+        
+        return $this->handleResponse($response)['OrderList'] ?? [];
+    }
+
+    public function updateOrderStatus(string $orderId, string $status): array
+    {
+        $response = $this->request('PUT', 'ordermgmt/orderstatus/orders/' . $orderId . '?sellerid=' . $this->sellerId, [
+            'RequestBody' => [
+                'UpdateOrderStatusRequest' => [
+                    'OrderNumber' => $orderId,
+                    'OrderStatus' => $status,
+                ]
+            ]
+        ]);
+
+        return $this->handleResponse($response);
     }
 }
