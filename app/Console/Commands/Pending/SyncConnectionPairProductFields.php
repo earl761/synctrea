@@ -53,10 +53,11 @@ class SyncConnectionPairProductFields extends Command
                             }
 
                             $updateData = [
+                                'name' => $cpp->product->name,
                                 'upc' => $cpp->product->upc,
                                 'part_number' => $cpp->product->part_number,
                                 'condition' => $cpp->product->condition,
-                                'price' => $cpp->product->cost_price,
+                                'price' => $cpp->product->cost_price, // Base price before pricing rules
                                 'stock' => $cpp->product->stock_quantity,
                             ];
 
@@ -73,6 +74,10 @@ class SyncConnectionPairProductFields extends Command
                                     ]);
                                 } else {
                                     $cpp->update($updateData);
+                                    
+                                    // Apply pricing rules to calculate final price
+                                    $finalPrice = $cpp->calculateFinalPrice();
+                                    $cpp->update(['final_price' => $finalPrice]);
                                 }
                                 $updated++;
                             }
@@ -124,4 +129,4 @@ class SyncConnectionPairProductFields extends Command
             return Command::FAILURE;
         }
     }
-} 
+}

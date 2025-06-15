@@ -51,14 +51,14 @@ class ProductObserver
             foreach ($connectionPairs as $connectionPair) {
                 // Create connection pair product with all necessary fields
                 $connectionPairProduct = ConnectionPairProduct::create([
-                    'connection_pair_id' => $connectionPair->id,
                     'product_id' => $product->id,
+                    'connection_pair_id' => $connectionPair->id,
                     'sku' => $connectionPair->sku_prefix . $product->sku,
                     'name' => $product->name,
                     'upc' => $product->upc,
                     'condition' => $product->condition,
                     'part_number' => $product->part_number,
-                    'price' => $product->cost_price,
+                    'price' => $product->cost_price, // Base price before pricing rules
                     'fila_price' => $product->retail_price,
                     'stock' => $product->stock_quantity,
                     'weight' => $product->weight ?? 0,
@@ -66,6 +66,10 @@ class ProductObserver
                     'sync_status' => 'pending',
                     'price_override_type' => ConnectionPairProduct::PRICE_OVERRIDE_NONE
                 ]);
+
+                // Apply pricing rules to calculate final price
+                $finalPrice = $connectionPairProduct->calculateFinalPrice();
+                $connectionPairProduct->update(['final_price' => $finalPrice]);
 
                 Log::info('Created connection pair product', [
                     'connection_pair_id' => $connectionPair->id,

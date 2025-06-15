@@ -224,7 +224,7 @@ class SyncService
                     'upc' => $product->upc,
                     'condition' => $product->condition,
                     'part_number' => $product->part_number,
-                    'price' => $product->cost_price,
+                    'price' => $product->cost_price, // Base price before pricing rules
                     'fila_price' => $product->retail_price,
                     'stock' => $product->stock_quantity,
                     'weight' => $product->weight ?? 0,
@@ -236,7 +236,12 @@ class SyncService
                     $updates['sku'] = $connectionPairProduct->connectionPair->sku_prefix . $product->sku;
                 }
 
+                // Update the connection pair product with basic data
                 $connectionPairProduct->update($updates);
+
+                // Now calculate and apply the final price with pricing rules
+                $finalPrice = $connectionPairProduct->calculateFinalPrice();
+                $connectionPairProduct->update(['final_price' => $finalPrice]);
 
                 Log::info('Updated connection pair product', [
                     'connection_pair_product_id' => $connectionPairProduct->id,
