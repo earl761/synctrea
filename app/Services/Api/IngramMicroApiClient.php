@@ -289,7 +289,7 @@ class IngramMicroApiClient extends AbstractApiClient
             // Set required headers for the API request
             $this->setHeaders([
                 'IM-CustomerNumber' =>  $this->supplier->customer_number,
-                'IM-CountryCode' => $this->supplier->country_code ?? 'CA',
+                'IM-CountryCode' => $this->supplier->country_code ,
                 'IM-CorrelationID' => $correlationId,
             ]);
 
@@ -339,7 +339,7 @@ class IngramMicroApiClient extends AbstractApiClient
             // Set required headers for the API request
             $this->setHeaders([
                 'IM-CustomerNumber' => $this->supplier->customer_number,
-                'IM-CountryCode' => $this->supplier->country_code ?? 'CA',
+                'IM-CountryCode' => $this->supplier->country_code,
                 'IM-CorrelationID' => $correlationId,
             ]);
 

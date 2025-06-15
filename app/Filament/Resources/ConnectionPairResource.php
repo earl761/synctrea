@@ -216,19 +216,7 @@ class ConnectionPairResource extends Resource
         ];
     }
 
-    public static function getEloquentQuery(): Builder
-    {
-        $query = parent::getEloquentQuery();
-
-        /** @var User $user */
-        $user = Auth::user();
-
-        if (!$user->isSuperAdmin()) {
-            $query->where('company_id', $user->company_id);
-        }
-
-        return $query->latest();
-    }
+    // Tenant scoping is now handled automatically by the BelongsToTenant trait
 
     public static function getHeaderActions(): array
     {

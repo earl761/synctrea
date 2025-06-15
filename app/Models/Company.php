@@ -163,4 +163,4 @@ class Company extends Model implements HasMedia
 
         return $price->id;
     }
-} 
+}

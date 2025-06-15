@@ -83,7 +83,7 @@ class AmazonApiClient
         }
 
         // Validate and sanitize destination fields
-        $this->region = $this->cleanUtf8String($this->destination->region ?? 'CA');
+        $this->region = $this->cleanUtf8String($this->destination->region );
         if (!$this->isValidUtf8($this->region)) {
             Log::error('Invalid UTF-8 in destination region', [
                 'region' => $this->region,

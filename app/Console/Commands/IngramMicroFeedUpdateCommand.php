@@ -3,8 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Models\Supplier;
-use App\Models\ConnectionPair;
-use App\Models\ConnectionPairProduct;
 use App\Models\Product;
 use App\Models\SyncLog;
 use App\Services\Api\IngramMicroApiClient;
@@ -18,38 +16,24 @@ use League\Flysystem\UnixVisibility\PortableVisibilityConverter;
 
 class IngramMicroFeedUpdateCommand extends Command
 {
-    protected $signature = 'ingram:feed-update {connectionPairId?}';
+    protected $signature = 'ingram:feed-update';
     protected $description = 'Download and process Ingram Micro price/inventory feed files';
 
     protected Filesystem $sftp;
     protected string $localPath;
-    protected ?ConnectionPair $connectionPair = null;
     protected IngramMicroApiClient $ingramMicroApiClient;
 
     public function handle(): int
     {
         try {
-            if ($connectionPairId = $this->argument('connectionPairId')) {
-                $this->connectionPair = ConnectionPair::findOrFail($connectionPairId);
-                $supplier = $this->connectionPair->supplier;
-            } else {
-                $supplier = Supplier::where('type', Supplier::TYPE_INGRAM_MICRO)
-                    ->where('is_active', true)
-                    ->firstOrFail();
-
-                
-            }
+            // Get Ingram Micro supplier directly - we work with Products, not ConnectionPairs
+            $supplier = Supplier::where('type', Supplier::TYPE_INGRAM_MICRO)
+                ->where('is_active', true)
+                ->firstOrFail();
             
             // Initialize Ingram Micro API client
             $this->ingramMicroApiClient = new IngramMicroApiClient($supplier);
-            Log::info('Syncing Ingram Micro catalog', [
-                'supplier' => $supplier->name,
-                'supplier_id' => $supplier->id,
-                'credentials' => $supplier->credentials,
-                'credentials_sftp_host' => $supplier->credentials['sftp_host']?? '',
-                'credentials_sftp_username' => $supplier->credentials['sftp_username']?? '',
-                'credentials_sftp_password' => $supplier->credentials['sftp_password']?? '',
-            ]);
+           
 
             if (!$supplier->credentials || empty($supplier->credentials['sftp_host'])) {
                 $this->error('SFTP credentials not configured for supplier');
@@ -65,6 +49,13 @@ class IngramMicroFeedUpdateCommand extends Command
 
             // Download and process price file
             $this->downloadFeedFile($supplier);
+            
+            // Verify the file was downloaded and extracted
+            $priceFile = $this->localPath . '/PRICE.TXT';
+            if (!file_exists($priceFile)) {
+                throw new \Exception("PRICE.TXT file not found after download and extraction");
+            }
+            
             $this->processFeedFile($supplier);
 
             $this->info('Feed update completed successfully');
@@ -84,15 +75,18 @@ class IngramMicroFeedUpdateCommand extends Command
     {
         $credentials = $supplier->credentials;
         
-        // Strip 'sftp://' protocol from host if present
-        $host = str_replace('sftp://', '', $credentials['sftp_host']);
+        // Strip 'sftp://' protocol from host if present and trim whitespace
+        $host = trim(str_replace('sftp://', '', $credentials['sftp_host']));
+        $username = trim($credentials['sftp_username']);
+        $password = trim($credentials['sftp_password']);
+        
+        $this->info("Connecting to SFTP: {$host} with username: {$username}");
         
         $this->sftp = new Filesystem(new SftpAdapter(
             new SftpConnectionProvider(
                 $host,
-                $credentials['sftp_username'],
-                $credentials['sftp_password'] 
-               // C,00FM05      ,352U,JUNIPER H/E SW SRX BRANCH SRX LIC  ,1YR SIGNATURE SUB              ,,0000000000027570.00,SRX5K-IDP           ,000000.00,             ,0000.00,0000.00,0000.00,Y,0000000000019299.00,O,N, ,SM-SW ,LICS,1569, , ,            
+                $username,
+                $password
             ),
             '/', // Root path
             PortableVisibilityConverter::fromArray([
@@ -114,24 +108,47 @@ class IngramMicroFeedUpdateCommand extends Command
         $localFile = $this->localPath . '/' . basename($remoteFile);
 
         $this->info("Downloading feed file {$remoteFile}");
-        $contents = $this->sftp->read($remoteFile);
-        file_put_contents($localFile, $contents);
+        
+        try {
+            // Check if remote file exists
+            if (!$this->sftp->fileExists($remoteFile)) {
+                throw new \Exception("Remote file {$remoteFile} does not exist");
+            }
+            
+            $contents = $this->sftp->read($remoteFile);
+            $this->info("Downloaded " . strlen($contents) . " bytes");
+            
+            file_put_contents($localFile, $contents);
+            $this->info("Saved to {$localFile}");
 
-        // Extract ZIP file
-        $zip = new \ZipArchive;
-        if ($zip->open($localFile) === true) {
-            $zip->extractTo($this->localPath);
-            $zip->close();
-            unlink($localFile); // Remove ZIP after extraction
+            // Extract ZIP file
+            $zip = new \ZipArchive;
+            $result = $zip->open($localFile);
+            if ($result === true) {
+                $this->info("Extracting ZIP file to {$this->localPath}");
+                $zip->extractTo($this->localPath);
+                $zip->close();
+                // Keep ZIP file for future runs - don't delete it
+                $this->info("ZIP file extracted successfully");
+            } else {
+                throw new \Exception("Failed to open ZIP file. Error code: {$result}");
+            }
+        } catch (\Exception $e) {
+            throw new \Exception("Failed to download or extract feed file: " . $e->getMessage());
         }
     }
 
     protected function processFeedFile(Supplier $supplier): void
     {
         $priceFile = $this->localPath . '/PRICE.TXT';
+        $this->info("Looking for price file at: {$priceFile}");
+        
         if (!file_exists($priceFile)) {
             throw new \Exception("Price file not found after extraction");
         }
+        
+        $fileSize = filesize($priceFile);
+        $this->info("Processing price file: {$priceFile} (Size: {$fileSize} bytes)");
 
         $handle = fopen($priceFile, 'r');
         $lineCount = 0;
@@ -143,200 +160,136 @@ class IngramMicroFeedUpdateCommand extends Command
             'deleted' => 0
         ];
 
-        while (($line = fgetcsv($handle)) !== false) {
+        while (($line = fgets($handle)) !== false) {
             $lineCount++;
-            if ($lineCount === 1) continue; // Skip header row
+            
+            // Skip empty lines
+            $line = trim($line);
+            if (empty($line)) continue;
+            
+            // Parse comma-delimited line
+            $fields = explode("\t", $line);
+            
+            // Add debugging for first few lines
+            if ($lineCount <= 5) {
+                $this->info("Line {$lineCount}: " . count($fields) . " fields");
+                $this->info("Sample fields: " . implode(' | ', array_slice($fields, 0, 5)));
+            }
+            
+            // Skip if not enough fields or invalid format
+            if (count($fields) < 10) {
+                $this->warn("Skipping line {$lineCount}: insufficient fields (" . count($fields) . " fields)");
+                continue;
+            }
 
-            // Map CSV fields to product data
+            // Map pipe-delimited fields to product data based on PRICE.TXT format
+            // Field positions: 0=Type, 1=IngramSKU, 2=VendorNumber, 3=VendorName, 4=Description1, 5=Description2, 6=UnitPrice, 7=VendorPartNumber, 8=Weight, 9=UPC, etc.
             $productData = [
-                'ingram_sku' => $line[0] ?? null,
-                'name' => trim($line[1] ?? ''),
-                'part_number' => trim($line[3] ?? ''),
-                'upc' => trim($line[4] ?? ''),
-                'weight' => is_numeric($line[9]) ? min((float)$line[9], 999999.99) : 0,
-                'price' => is_numeric($line[13]) ? (float)$line[13] : 0,
-                'stock' => (int)($line[16] ?? 0),
+                'ingram_sku' => trim($fields[1] ?? ''),
+                'name' => trim(($fields[4] ?? '') . ' ' . ($fields[5] ?? '')), // Combine description fields
+                'part_number' => trim($fields[7] ?? ''),
+                'upc' => trim($fields[9] ?? ''),
+                'weight' => $this->parseNumericField($fields[8] ?? '0'),
+                'price' => $this->parseNumericField($fields[6] ?? '0'),
+                'cost' => $this->parseNumericField($fields[14] ?? '0'),
+                'vendor' => trim($fields[3] ?? ''),
+                'description' => trim(($fields[4] ?? '') . ' ' . ($fields[5] ?? '')),
+                'category' =>trim($fields[19] ?? ''),
+                'type' => trim($fields[20] ?? ''),
+               // 'authorizedToPurchase' => '',
+                'height' => $this->parseNumericField($fields[10] ?? '0'),
+                'width' =>$this->parseNumericField($fields[11] ?? '0'),
+                'length' => $this->parseNumericField($fields[12] ?? '0'),
+                'stock' => $this->parseNumericField($fields[21] ?? '0' ), // Stock info not available in this feed format
             ];
 
-            if ($productData['ingram_sku']) {
+            // Add debugging for product data
+            if ($lineCount <= 5) {
+                $this->info("Product data: " . json_encode($productData));
+            }
+            
+            if (!empty($productData['ingram_sku'])) {
                 $processedSkus[] = $productData['ingram_sku'];
                 
-                // First update or create the main Product
-                $product = Product::updateOrCreate(
-                    [
-                        'supplier_id' => $this->connectionPair->supplier_id,
-                        'sku' => $productData['ingram_sku']
-                    ],
-                    [
-                        'name' => $productData['name'],
-                        'part_number' => $productData['part_number'],
-                        'upc' => $productData['upc'],
-                        'cost_price' => $productData['price'],
-                        'stock_quantity' => $productData['stock'],
-                    ]
-                );
-
-                // Then process connection pair product
-                if ($this->connectionPair) {
-                    $result = $this->processConnectionPairProduct($productData);
-                } else {
-                    $result = $this->processAllConnectionPairProducts($supplier, $productData);
+                // Add debugging for successful processing
+                if ($lineCount <= 5) {
+                    $this->info("Processing product with SKU: " . $productData['ingram_sku']);
                 }
                 
-                $stats['created'] += $result['created'];
-                $stats['updated'] += $result['updated'];
+                // Prepare update data for Product table
+                $updateData = [
+                    'name' => $productData['name'],
+                    'part_number' => $productData['part_number'],
+                    'upc' => $productData['upc'],
+                    'cost_price' => $productData['cost'],
+                    'retail_price' => $productData['price'],
+                    'description' => $productData['description'],
+                    'stock_quantity' => $productData['stock'],
+                    'category' => $productData['category'],
+                    'type' => $productData['type'],
+                   // 'authorizedToPurchase' => $productData['authorizedToPurchase'],
+                    'height' => $productData['height'],
+                    'width' => $productData['width'],
+                    'length' => $productData['length'],
+                    'map_price' => $productData['price'],
+                    'brand' => $productData['vendor'],
+                    'condition' => 'new'
+                ];
+                
+                // Add weight if it's a reasonable value
+                if ($productData['weight'] > 0 && $productData['weight'] < 999999) {
+                    $updateData['weight'] = $productData['weight'];
+                }
+                
+                // Update or create the Product directly
+                $product = Product::updateOrCreate(
+                    [
+                        'supplier_id' => $supplier->id,
+                        'sku' => $productData['ingram_sku']
+                    ],
+                    $updateData
+                );
+
+                if ($product->wasRecentlyCreated) {
+                    $stats['created']++;
+                } else {
+                    $stats['updated']++;
+                }
+                
+                // Add debugging for processing results
+                if ($lineCount <= 5) {
+                    $this->info("Product " . ($product->wasRecentlyCreated ? 'created' : 'updated') . " successfully");
+                }
+            } else {
+                if ($lineCount <= 5) {
+                    $this->info("Warning: Empty SKU found");
+                }
             }
         }
 
         fclose($handle);
 
-        // Handle deletions - products in DB but not in feed
-        if ($this->connectionPair) {
-            $stats['deleted'] = $this->handleDeletions($this->connectionPair, $processedSkus);
-        } else {
-            foreach ($supplier->connectionPairs()->where('is_active', true)->get() as $connectionPair) {
-                $stats['deleted'] += $this->handleDeletions($connectionPair, $processedSkus);
-            }
-        }
+        $this->info("Feed processing completed. Created: {$stats['created']}, Updated: {$stats['updated']}");
 
-        $this->info("Feed processing completed:");
-        $this->info(" - Created: {$stats['created']}");
-        $this->info(" - Updated: {$stats['updated']}");
-        $this->info(" - Deleted: {$stats['deleted']}");
-        
-        // Cleanup
+        // Clean up the extracted file
         unlink($priceFile);
     }
 
-    protected function processConnectionPairProduct(array $productData): array
+
+
+
+    
+    /**
+     * Parse numeric field from PRICE.TXT format (removes leading zeros and converts to float)
+     */
+    protected function parseNumericField(string $value): float
     {
-        $stats = ['created' => 0, 'updated' => 0];
-        
-        $product = Product::where('supplier_id', $this->connectionPair->supplier_id)
-            ->where('sku', $productData['ingram_sku'])
-            ->first();
-
-        if ($product) {
-            $product->update([
-                'name' => $productData['name'],
-                'part_number' => $productData['part_number'],
-                'upc' => $productData['upc'],
-                // 'weight' => $productData['weight'],
-                'cost_price' => $productData['price'],
-                'stock_quantity' => $productData['stock'],
-            ]);
-            $stats['updated']++;
-        } else {
-            Product::create([
-                'supplier_id' => $this->connectionPair->supplier_id,
-                'sku' => $productData['ingram_sku'],
-                'name' => $productData['name'],
-                'part_number' => $productData['part_number'],
-                'upc' => $productData['upc'],
-                //'weight' => $productData['weight'],
-                'cost_price' => $productData['price'],
-                'stock_quantity' => $productData['stock'],
-       
-            ]);
-            $stats['created']++;
-            
-            // Call getPriceAndAvailability for newly created product
-            $this->updateProductPriceAndAvailability($productData['part_number']);
+        // Remove leading zeros and convert to float
+        $cleaned = ltrim($value, '0');
+        if (empty($cleaned) || $cleaned === '.') {
+            return 0.0;
         }
-
-        return $stats;
-    }
-
-    protected function processAllConnectionPairProducts(Supplier $supplier, array $productData): array
-    {
-        $stats = ['created' => 0, 'updated' => 0];
-        $connectionPairs = $supplier->connectionPairs()->where('is_active', true)->get();
-
-        foreach ($connectionPairs as $connectionPair) {
-            $product = ConnectionPairProduct::where('connection_pair_id', $connectionPair->id)
-                ->where('sku', $productData['ingram_sku'])
-                ->first();
-
-            if ($product) {
-                $product->update([
-                    'name' => $productData['name'],
-                    'part_number' => $productData['part_number'],
-                    'upc' => $productData['upc'],
-                    // 'weight' => $productData['weight'],
-                    'cost_price' => $productData['price'],
-                    'stock_quantity' => $productData['stock'],
-                    // 'last_synced_at' => now()
-                ]);
-                $stats['updated']++;
-            } else {
-                $newProduct = ConnectionPairProduct::create([
-                    'connection_pair_id' => $connectionPair->id,
-                    'sku' => $productData['ingram_sku'],
-                    'name' => $productData['name'],
-                    'part_number' => $productData['part_number'],
-                    'upc' => $productData['upc'],
-                    'cost_price' => $productData['price'],
-                    'stock_quantity' => $productData['stock'],
-                ]);
-                $stats['created']++;
-                
-                // Call getPriceAndAvailability for newly created product
-                $this->updateProductPriceAndAvailability($productData['part_number']);
-            }
-        }
-
-        return $stats;
-    }
-
-    protected function handleDeletions(ConnectionPair $connectionPair, array $processedSkus): int
-    {
-        $deletedCount = 0;
-        
-        // Find and zero stock for products that exist in DB but not in the feed
-        $productsToDelete = Product::where('supplier_id', $connectionPair->supplier_id)
-            ->whereNotIn('sku', $processedSkus)
-            ->get();
-
-        foreach ($productsToDelete as $product) {
-            SyncLog::create([
-                'supplier_id' => $connectionPair->supplier_id,
-                'product_id' => $product->id,
-                'type' => 'zero_stock',
-                'status' => 'success',
-                'message' => 'Product stock set to 0 - not found in Ingram Micro feed',
-                'details' => json_encode([
-                    'old_data' => $product->toArray(),
-                    'new_data' => array_merge($product->toArray(), ['stock_quantity' => 0])
-                ]),
-            ]);
-
-            $product->update(['stock_quantity' => 0]);
-            $deletedCount++;
-        }
-
-        // Also zero stock for connection pair products
-        $connectionPairProductsToDelete = ConnectionPairProduct::where('connection_pair_id', $connectionPair->id)
-            ->whereNotIn('sku', $processedSkus)
-            ->get();
-
-        foreach ($connectionPairProductsToDelete as $product) {
-            SyncLog::create([
-                'supplier_id' => $connectionPair->supplier_id,
-                'product_id' => $product->id,
-                'type' => 'zero_stock',
-                'status' => 'success',
-                'message' => 'Connection pair product stock set to 0 - not found in Ingram Micro feed',
-                'details' => json_encode([
-                    'old_data' => $product->toArray(),
-                    'new_data' => array_merge($product->toArray(), ['stock_quantity' => 0])
-                ]),
-            ]);
-
-            $product->update(['stock_quantity' => 0]);
-            $deletedCount++;
-        }
-
-        return $deletedCount;
+        return is_numeric($cleaned) ? (float)$cleaned : 0.0;
     }
     
     /**
@@ -357,7 +310,7 @@ class IngramMicroFeedUpdateCommand extends Command
                     
                     if ($ingramSku) {
                         // Update main Product table
-                        $product = Product::where('supplier_id', $this->connectionPair->supplier_id ?? $this->ingramMicroApiClient->getSupplier()->id)
+                        $product = Product::where('supplier_id', $this->ingramMicroApiClient->getSupplier()->id)
                             ->where('sku', $ingramSku)
                             ->first();
                             
@@ -384,17 +337,7 @@ class IngramMicroFeedUpdateCommand extends Command
                             }
                         }
                         
-                        // Update ConnectionPairProduct if we have a specific connection pair
-                        if ($this->connectionPair) {
-                            $connectionPairProduct = ConnectionPairProduct::where('connection_pair_id', $this->connectionPair->id)
-                                ->where('sku', $ingramSku)
-                                ->first();
-                                
-                            if ($connectionPairProduct && !empty($updateData)) {
-                                $connectionPairProduct->update($updateData);
-                                $this->info("Updated connection pair product {$ingramSku} with latest price and availability");
-                            }
-                        }
+
                     }
                 }
             }

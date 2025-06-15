@@ -30,6 +30,7 @@ class ConnectionPairProduct extends Model
         'condition',
         'part_number',
         'price', // Base price from supplier
+        'cost_price', // Cost price from supplier
         'fila_price', // List price
         'stock',
         'weight',

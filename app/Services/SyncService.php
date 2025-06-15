@@ -152,7 +152,7 @@ class SyncService
     {
         $destination = $product->connectionPair->destination;
         
-        if ($destination->type === 'amazon') {
+        if ($destination->type === 'woocomerce') {
             SyncToAmazonJob::dispatch($product);
         } elseif ($destination->type === 'prestashop') {
             SyncToPrestaShopJob::dispatch($product);

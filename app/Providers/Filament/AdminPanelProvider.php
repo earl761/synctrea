@@ -85,10 +85,11 @@ class AdminPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
-                FilamentRobotsMiddleware::class
+                FilamentRobotsMiddleware::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
+                'tenant',
             ])
             ->plugins([
                 \TomatoPHP\FilamentMediaManager\FilamentMediaManagerPlugin::make()
