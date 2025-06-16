@@ -156,7 +156,7 @@ class SyncAnalyticsService
     public function getPerformanceByConnectionPair(int $limit = 10): array
     {
         return Cache::remember('performance_by_connection_pair', 300, function () use ($limit) {
-            return DB::table('connection_pair_product as cpp')
+            $results = DB::table('connection_pair_product as cpp')
                 ->join('connection_pairs as cp', 'cpp.connection_pair_id', '=', 'cp.id')
                 ->join('companies as c', 'cp.company_id', '=', 'c.id')
                 ->join('destinations as d', 'cp.destination_id', '=', 'd.id')
@@ -174,8 +174,21 @@ class SyncAnalyticsService
                 ->groupBy('cp.id', 'c.name', 'd.name', 'd.type')
                 ->orderBy('total_items', 'desc')
                 ->limit($limit)
-                ->get()
-                ->toArray();
+                ->get();
+
+            // Convert stdClass objects to arrays
+            return $results->map(function ($item) {
+                return [
+                    'name' => $item->company_name . ' → ' . $item->destination_name,
+                    'total_syncs' => $item->total_items,
+                    'success_rate' => $item->success_rate,
+                    'avg_time' => 0, // This would need additional calculation if needed
+                    'last_sync' => null, // This would need additional query if needed
+                    'synced_items' => $item->synced_items,
+                    'failed_items' => $item->failed_items,
+                    'pending_items' => $item->pending_items,
+                ];
+            })->toArray();
         });
     }
 

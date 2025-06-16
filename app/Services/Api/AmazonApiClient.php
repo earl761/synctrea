@@ -1041,13 +1041,8 @@ class AmazonApiClient
     {
         $path = "/definitions/2020-09-01/productTypes";
 
-        // If the product category is "Displays", use it as a keyword
-        if ($product_category == "Displays") {
-            $keywords = "Monitors";
-            
-        } else {
-            $keywords = $product_category;
-        }
+        // Clean and normalize the product category for better API compatibility
+        $keywords = $this->normalizeProductCategory($product_category);
 
         $query = [
             'marketplaceIds' => self::MARKETPLACE_ID,
@@ -1083,6 +1078,62 @@ class AmazonApiClient
         return $productTypeNames;
     }
 
+    /**
+     * Normalize product category for Amazon API compatibility
+     * 
+     * @param string $product_category
+     * @return string
+     */
+    private function normalizeProductCategory(string $product_category): string
+    {
+        // Handle specific category mappings for better Amazon API compatibility
+        $categoryMappings = [
+            'Displays' => 'Monitors',
+            'Accessories & Supplies' => 'Computer Accessories',
+            'Computer Accessories & Peripherals' => 'Computer Accessories',
+            'Office & School Supplies' => 'Office Supplies',
+            'Electronics & Accessories' => 'Electronics',
+            'Audio & Video Accessories' => 'Audio Video',
+            'Camera & Photo Accessories' => 'Camera Photo',
+            'Cell Phone Accessories & Parts' => 'Cell Phone Accessories',
+            'Computer Components & Parts' => 'Computer Components',
+            'Video Games & Accessories' => 'Video Games',
+        ];
+
+        // Check if we have a specific mapping
+        if (isset($categoryMappings[$product_category])) {
+            return $categoryMappings[$product_category];
+        }
+
+        // Clean the category name by removing special characters and normalizing
+        $normalized = $product_category;
+        
+        // Replace common problematic characters
+        $normalized = str_replace(['&', ' & '], [' and ', ' and '], $normalized);
+        
+        // Remove extra spaces and trim
+        $normalized = preg_replace('/\s+/', ' ', trim($normalized));
+        
+        // If the normalized string is too long or complex, try to simplify
+        if (strlen($normalized) > 50 || str_word_count($normalized) > 4) {
+            // Extract the main category (first significant word)
+            $words = explode(' ', $normalized);
+            $mainWords = array_filter($words, function($word) {
+                return !in_array(strtolower($word), ['and', 'or', 'with', 'for', 'the', 'of', 'in', 'on', 'at']);
+            });
+            
+            if (!empty($mainWords)) {
+                $normalized = implode(' ', array_slice($mainWords, 0, 2));
+            }
+        }
+        
+        Log::info('Normalized product category', [
+            'original' => $product_category,
+            'normalized' => $normalized
+        ]);
+        
+        return $normalized;
+    }
 
     /**
      * Get product type by ASIN from Amazon Catalog API

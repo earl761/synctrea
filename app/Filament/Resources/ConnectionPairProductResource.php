@@ -374,21 +374,36 @@ class ConnectionPairProductResource extends Resource
                     ->searchable(),
             ])
             ->actions([
-                Tables\Actions\Action::make('queue')
-                    ->action(fn (ConnectionPairProduct $record) => $record->update(['catalog_status' => ConnectionPairProduct::STATUS_QUEUED]))
-                    ->requiresConfirmation()
-                    ->visible(fn (ConnectionPairProduct $record) => $record->catalog_status === ConnectionPairProduct::STATUS_DEFAULT)
-                    ->color('primary')
-                    ->icon('heroicon-o-queue-list'),
                 Tables\Actions\Action::make('move_to_catalog')
                     ->action(fn (ConnectionPairProduct $record) => $record->update(['catalog_status' => ConnectionPairProduct::STATUS_IN_CATALOG]))
                     ->requiresConfirmation()
                     ->visible(fn (ConnectionPairProduct $record) => $record->catalog_status === ConnectionPairProduct::STATUS_QUEUED)
                     ->color('success')
                     ->icon('heroicon-o-check'),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
-                Action::make('create_pricing_rule')
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('queue')
+                        ->action(fn (ConnectionPairProduct $record) => $record->update(['catalog_status' => ConnectionPairProduct::STATUS_QUEUED]))
+                        ->requiresConfirmation()
+                        ->visible(fn (ConnectionPairProduct $record) => $record->catalog_status === ConnectionPairProduct::STATUS_DEFAULT)
+                        ->color('primary')
+                        ->icon('heroicon-o-queue-list'),
+                    Tables\Actions\Action::make('send_to_catalog')
+                        ->action(function (ConnectionPairProduct $record) {
+                            $record->update(['catalog_status' => ConnectionPairProduct::STATUS_IN_CATALOG]);
+                            
+                            Notification::make()
+                                ->success()
+                                ->title('Product Sent to Catalog')
+                                ->body('Product has been sent to catalog successfully.')
+                                ->send();
+                        })
+                        ->requiresConfirmation()
+                        ->visible(fn (ConnectionPairProduct $record) => $record->catalog_status === ConnectionPairProduct::STATUS_QUEUED)
+                        ->label('Send to Catalog')
+                        ->color('info')
+                        ->icon('heroicon-o-paper-airplane'),
+                    Tables\Actions\EditAction::make(),
+                    Action::make('create_pricing_rule')
                     ->label('Create Pricing Rule')
                     ->icon('heroicon-o-plus-circle')
                     ->color('success')
@@ -466,6 +481,10 @@ class ConnectionPairProductResource extends Resource
                                 ->send();
                         }
                     }),
+                ])
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->size('sm')
+                    ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -503,7 +522,7 @@ class ConnectionPairProductResource extends Resource
                         ->label('Move to Catalog')
                         ->color('success')
                         ->icon('heroicon-o-check'),
-                    Tables\Actions\DeleteBulkAction::make(),
+
                 ]),
             ]);
     }
