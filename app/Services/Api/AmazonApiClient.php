@@ -1062,6 +1062,7 @@ class AmazonApiClient
             'status' => $response->status(),
             'response' => $response->json()
         ]);
+
         if ($response->failed()) {
             Log::error('Failed to get product types', [
                 'response' => $response->json(),
@@ -1094,8 +1095,8 @@ class AmazonApiClient
         // Handle specific category mappings for better Amazon API compatibility
         $categoryMappings = [
             'Displays' => 'monitors',
-            'Accessories & Supplies' => 'computer,accessories',
-            'Computer Accessories & Peripherals' => 'computer,accessories',
+            'Accessories & Supplies' => 'Accessories',
+            'Computer Accessories & Peripherals' => 'computer accessories',
             'Office & School Supplies' => 'office,supplies',
             'Electronics & Accessories' => 'electronics',
             'Audio & Video Accessories' => 'audio,video',
@@ -1158,12 +1159,6 @@ class AmazonApiClient
             'includedData' => ['attributes', 'dimensions', 'identifiers', 'summaries']
         ];
 
-        Log::info('Getting product type by ASIN', [
-            'asin' => $asin,
-            'path' => $path,
-            'query' => $query
-        ]);
-
         try {
             $signed = $this->signRequest('GET', $path, $query);
             $response = Http::withHeaders($signed['headers'])->get($signed['url']);
@@ -1178,16 +1173,17 @@ class AmazonApiClient
             }
 
             $data = $response->json();
+
+            Log::info('Product type response', [
+                'asin' => $asin,
+                'response' => $data
+            ]);
             
             // Try to get the product type from browseClassification
             if (isset($data['summaries'][0]['browseClassification']['displayName'])) {
                 return $data['summaries'][0]['browseClassification']['displayName'];
             }
 
-            Log::warning('No browse classification found for ASIN', [
-                'asin' => $asin,
-                'response' => $data
-            ]);
             return null;
 
         } catch (\Exception $e) {
@@ -1211,24 +1207,12 @@ class AmazonApiClient
             'marketplaceIds' => self::MARKETPLACE_ID,
         ];
 
-        Log::info('Searching Amazon catalog by UPC', [
-            'upc' => $upc,
-            'path' => $path,
-            'query' => $query,
-            'region' => $this->region,
-            'marketplace_id' => self::MARKETPLACE_ID
-        ]);
 
         $signed = $this->signRequest('GET', $path, $query);
         $response = Http::withHeaders($signed['headers'])->get($signed['url']);
 
         $responseData = $response->json();
 
-        Log::info('Amazon catalog search response', [
-            'status' => $response->status(),
-            'response_data' => $responseData,
-            'headers' => $response->headers()
-        ]);
 
         if ($response->failed()) {
             Log::error('Catalog search failed', [
@@ -1282,6 +1266,10 @@ public function addBulkToSellerCatalogWithJsonFeed(array $items): array
             $product = $item['product'];
             $catalogData = $product->catalog_data ?? [];
             $catalogItem = $catalogData['items'][0] ?? null;
+
+            Log::info('Catalog data', [
+                'catalog_item' => $catalogItem,
+            ]);
 
             if (!$catalogItem || empty($catalogItem['asin'])) {
                 Log::warning('Skipping product with no ASIN', [
