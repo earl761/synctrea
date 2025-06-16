@@ -1058,6 +1058,10 @@ class AmazonApiClient
         $signed = $this->signRequest('GET', $path, $query);
         $response = Http::withHeaders($signed['headers'])->get($signed['url']);
 
+        Log::info('Response from Amazon', [
+            'status' => $response->status(),
+            'response' => $response->json()
+        ]);
         if ($response->failed()) {
             Log::error('Failed to get product types', [
                 'response' => $response->json(),
