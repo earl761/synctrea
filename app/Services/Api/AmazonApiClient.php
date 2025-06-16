@@ -1080,6 +1080,7 @@ class AmazonApiClient
 
     /**
      * Normalize product category for Amazon API compatibility
+     * Returns comma-delimited keywords for better search results
      * 
      * @param string $product_category
      * @return string
@@ -1088,16 +1089,16 @@ class AmazonApiClient
     {
         // Handle specific category mappings for better Amazon API compatibility
         $categoryMappings = [
-            'Displays' => 'Monitors',
-            'Accessories & Supplies' => 'Computer Accessories',
-            'Computer Accessories & Peripherals' => 'Computer Accessories',
-            'Office & School Supplies' => 'Office Supplies',
-            'Electronics & Accessories' => 'Electronics',
-            'Audio & Video Accessories' => 'Audio Video',
-            'Camera & Photo Accessories' => 'Camera Photo',
-            'Cell Phone Accessories & Parts' => 'Cell Phone Accessories',
-            'Computer Components & Parts' => 'Computer Components',
-            'Video Games & Accessories' => 'Video Games',
+            'Displays' => 'monitors',
+            'Accessories & Supplies' => 'computer,accessories',
+            'Computer Accessories & Peripherals' => 'computer,accessories',
+            'Office & School Supplies' => 'office,supplies',
+            'Electronics & Accessories' => 'electronics',
+            'Audio & Video Accessories' => 'audio,video',
+            'Camera & Photo Accessories' => 'camera,photo',
+            'Cell Phone Accessories & Parts' => 'cell,phone,accessories',
+            'Computer Components & Parts' => 'computer,components',
+            'Video Games & Accessories' => 'video,games',
         ];
 
         // Check if we have a specific mapping
@@ -1114,25 +1115,28 @@ class AmazonApiClient
         // Remove extra spaces and trim
         $normalized = preg_replace('/\s+/', ' ', trim($normalized));
         
-        // If the normalized string is too long or complex, try to simplify
-        if (strlen($normalized) > 50 || str_word_count($normalized) > 4) {
-            // Extract the main category (first significant word)
-            $words = explode(' ', $normalized);
-            $mainWords = array_filter($words, function($word) {
-                return !in_array(strtolower($word), ['and', 'or', 'with', 'for', 'the', 'of', 'in', 'on', 'at']);
-            });
-            
-            if (!empty($mainWords)) {
-                $normalized = implode(' ', array_slice($mainWords, 0, 2));
-            }
+        // Extract meaningful words and convert to comma-delimited keywords
+        $words = explode(' ', $normalized);
+        $keywords = array_filter($words, function($word) {
+            $word = strtolower(trim($word));
+            // Filter out common stop words and short words
+            return strlen($word) > 2 && !in_array($word, ['and', 'or', 'with', 'for', 'the', 'of', 'in', 'on', 'at', 'by', 'from']);
+        });
+        
+        // Convert to lowercase and join with commas
+        $keywordString = implode(',', array_map('strtolower', array_slice($keywords, 0, 4)));
+        
+        // If no meaningful keywords found, use the original category as a single keyword
+        if (empty($keywordString)) {
+            $keywordString = strtolower(str_replace([' ', '&'], ['', ''], $product_category));
         }
         
-        Log::info('Normalized product category', [
+        Log::info('Normalized product category to keywords', [
             'original' => $product_category,
-            'normalized' => $normalized
+            'keywords' => $keywordString
         ]);
         
-        return $normalized;
+        return $keywordString;
     }
 
     /**
