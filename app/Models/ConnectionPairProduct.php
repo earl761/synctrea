@@ -79,6 +79,28 @@ class ConnectionPairProduct extends Model
         return $this->belongsTo(ConnectionPair::class);
     }
 
+    /**
+     * Get the qualified key name for the model.
+     * This ensures that when Filament adds WHERE clauses for finding records,
+     * the key is properly qualified with the table name to avoid ambiguity in joins.
+     */
+    public function getQualifiedKeyName()
+    {
+        return $this->getTable() . '.' . $this->getKeyName();
+    }
+
+    /**
+     * Resolve the route binding for the model.
+     * This ensures that when Filament resolves records for edit pages,
+     * it uses a qualified query that won't conflict with joins.
+     */
+    public function resolveRouteBinding($value, $field = null)
+    {
+        $field = $field ?: $this->getRouteKeyName();
+        
+        return $this->where($this->getTable() . '.' . $field, $value)->first();
+    }
+
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);

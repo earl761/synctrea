@@ -200,14 +200,10 @@ class ConnectionPairProductResource extends Resource
                     ->label('UPC')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('product_name')
+                Tables\Columns\TextColumn::make('product.name')
                     ->label('Product Name')
-                    ->searchable(query: function (Builder $query, string $search): Builder {
-                        return $query->where('products.name', 'like', "%{$search}%");
-                    })
-                    ->sortable(query: function (Builder $query, string $direction): Builder {
-                        return $query->orderBy('products.name', $direction);
-                    }),
+                    ->searchable()
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('condition')
                     ->badge()
                     ->colors([
@@ -533,7 +529,9 @@ class ConnectionPairProductResource extends Resource
         // If not in query, try to get it from the route parameter (record)
         if (!$connectionPairId && request()->route('record')) {
             $recordId = request()->route('record');
-            $record = \App\Models\ConnectionPairProduct::select('connection_pair_id')->find($recordId);
+            $record = \App\Models\ConnectionPairProduct::select('connection_pair_id')
+                ->where('connection_pair_product.id', $recordId)
+                ->first();
             if ($record) {
                 $connectionPairId = $record->connection_pair_id;
             }
@@ -550,17 +548,34 @@ class ConnectionPairProductResource extends Resource
         }
 
         return parent::getEloquentQuery()
-            ->select([
-                'connection_pair_product.*',
-                'products.name as product_name',
-                'products.brand as product_brand'
-            ])
-            ->leftJoin('products', 'connection_pair_product.product_id', '=', 'products.id')
             ->where('connection_pair_product.connection_pair_id', $connectionPairId)
             ->with([
+                'product:id,name,brand',
                 'connectionPair:id,supplier_id,destination_id,company_id',
                 'connectionPair.supplier:id,name',
                 'connectionPair.destination:id,name'
             ]);
+    }
+
+    /**
+     * Get the product name for display in the table
+     */
+    public static function getProductNameColumn()
+    {
+        return \Filament\Tables\Columns\TextColumn::make('product.name')
+            ->label('Product Name')
+            ->searchable()
+            ->sortable();
+    }
+
+    /**
+     * Get the product brand for display in the table
+     */
+    public static function getProductBrandColumn()
+    {
+        return \Filament\Tables\Columns\TextColumn::make('product.brand')
+            ->label('Brand')
+            ->searchable()
+            ->sortable();
     }
 }
