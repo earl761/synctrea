@@ -30,6 +30,7 @@ class PricingRule extends Model
         'is_active',
         'valid_from',
         'valid_until',
+        'company_id'
     ];
 
     protected $casts = [

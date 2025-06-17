@@ -133,7 +133,7 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         Commands\RecalculateProductPricesCommand::class,
         Commands\SyncConnectionPairProductFields::class,
-        Commands\ImportConnectionPairProducts::class,
+        //Commands\ImportConnectionPairProducts::class,
         Commands\AmazonBulkCatalogUpdateCommand::class,
         Commands\SyncAmazonCatalogCommand::class,
         //Commands\SyncIngramMicroCatalogCommand::class,
