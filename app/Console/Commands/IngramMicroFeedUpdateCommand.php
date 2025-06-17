@@ -13,6 +13,7 @@ use League\Flysystem\Filesystem;
 use League\Flysystem\PhpseclibV3\SftpConnectionProvider;
 use League\Flysystem\PhpseclibV3\SftpAdapter;
 use League\Flysystem\UnixVisibility\PortableVisibilityConverter;
+use Illuminate\Support\Collection;
 
 class IngramMicroFeedUpdateCommand extends Command
 {
@@ -149,10 +150,21 @@ class IngramMicroFeedUpdateCommand extends Command
         
         $fileSize = filesize($priceFile);
         $this->info("Processing price file: {$priceFile} (Size: {$fileSize} bytes)");
+        
+        // Count total lines for progress tracking
+        $totalLines = $this->countFileLines($priceFile);
+        $this->info("Total lines to process: {$totalLines}");
+        
+        // Initialize progress bar
+        $progressBar = $this->output->createProgressBar($totalLines);
+        $progressBar->setFormat('Processing: %current%/%max% [%bar%] %percent:3s%% %elapsed:6s%/%estimated:-6s% Memory: %memory:6s%');
+        $progressBar->start();
 
         $handle = fopen($priceFile, 'r');
         $lineCount = 0;
         $processedSkus = [];
+        $batchData = [];
+        $batchSize = 100; // Process in batches of 100
 
         $stats = [
             'created' => 0,
@@ -162,6 +174,16 @@ class IngramMicroFeedUpdateCommand extends Command
 
         while (($line = fgets($handle)) !== false) {
             $lineCount++;
+            $progressBar->advance();
+            
+            // Memory monitoring - log every 1000 lines
+            if ($lineCount % 1000 === 0) {
+                $memoryUsage = memory_get_usage(true) / 1024 / 1024; // MB
+                $peakMemory = memory_get_peak_usage(true) / 1024 / 1024; // MB
+                $this->newLine();
+                //$this->info("Memory usage: {$memoryUsage:.2f}MB (Peak: {$peakMemory:.2f}MB)");
+                $progressBar->display();
+            }
             
             // Skip empty lines
             $line = trim($line);
@@ -172,13 +194,19 @@ class IngramMicroFeedUpdateCommand extends Command
             
             // Add debugging for first few lines
             if ($lineCount <= 5) {
+                $this->newLine();
                 $this->info("Line {$lineCount}: " . count($fields) . " fields");
                 $this->info("Sample fields: " . implode(' | ', array_slice($fields, 0, 5)));
+                $progressBar->display();
             }
             
             // Skip if not enough fields or invalid format
             if (count($fields) < 10) {
-                $this->warn("Skipping line {$lineCount}: insufficient fields (" . count($fields) . " fields)");
+                if ($lineCount <= 5) {
+                    $this->newLine();
+                    $this->warn("Skipping line {$lineCount}: insufficient fields (" . count($fields) . " fields)");
+                    $progressBar->display();
+                }
                 continue;
             }
 
@@ -213,7 +241,9 @@ class IngramMicroFeedUpdateCommand extends Command
                 
                 // Add debugging for successful processing
                 if ($lineCount <= 5) {
+                    $this->newLine();
                     $this->info("Processing product with SKU: " . $productData['ingram_sku']);
+                    $progressBar->display();
                 }
                 
                 // Prepare update data for Product table
@@ -241,38 +271,103 @@ class IngramMicroFeedUpdateCommand extends Command
                     $updateData['weight'] = $productData['weight'];
                 }
                 
-                // Update or create the Product directly
-                $product = Product::updateOrCreate(
-                    [
+                // Add to batch for processing
+                $batchData[] = [
+                    'search_criteria' => [
                         'supplier_id' => $supplier->id,
                         'sku' => $productData['ingram_sku']
                     ],
-                    $updateData
-                );
+                    'update_data' => $updateData
+                ];
+                
+                // Process batch when it reaches the batch size
+                if (count($batchData) >= $batchSize) {
+                    $batchStats = $this->processBatch($batchData, $supplier);
+                    $stats['created'] += $batchStats['created'];
+                    $stats['updated'] += $batchStats['updated'];
+                    $batchData = []; // Reset batch
+                }
+                
+                // Add debugging for processing results
+                if ($lineCount <= 5) {
+                    $this->newLine();
+                    $this->info("Product added to batch for processing");
+                    $progressBar->display();
+                }
+            } else {
+                if ($lineCount <= 5) {
+                    $this->newLine();
+                    $this->info("Warning: Empty SKU found");
+                    $progressBar->display();
+                }
+            }
+        }
 
+        // Process any remaining items in the final batch
+        if (!empty($batchData)) {
+            $batchStats = $this->processBatch($batchData, $supplier);
+            $stats['created'] += $batchStats['created'];
+            $stats['updated'] += $batchStats['updated'];
+        }
+        
+        fclose($handle);
+        $progressBar->finish();
+        $this->newLine(2);
+        
+        // Final memory usage report
+        $finalMemory = memory_get_usage(true) / 1024 / 1024;
+        $peakMemory = memory_get_peak_usage(true) / 1024 / 1024;
+        //$this->info("Final memory usage: {$finalMemory:.2f}MB (Peak: {$peakMemory:.2f}MB)");
+        $this->info("Feed processing completed. Created: {$stats['created']}, Updated: {$stats['updated']}");
+
+        // Clean up the extracted file
+        unlink($priceFile);
+    }
+    
+    /**
+     * Count total lines in file for progress tracking
+     */
+    protected function countFileLines(string $filePath): int
+    {
+        $lineCount = 0;
+        $handle = fopen($filePath, 'r');
+        
+        while (fgets($handle) !== false) {
+            $lineCount++;
+        }
+        
+        fclose($handle);
+        return $lineCount;
+    }
+    
+    /**
+     * Process a batch of products for database operations
+     */
+    protected function processBatch(array $batchData, Supplier $supplier): array
+    {
+        $stats = ['created' => 0, 'updated' => 0];
+        
+        foreach ($batchData as $item) {
+            try {
+                $product = Product::updateOrCreate(
+                    $item['search_criteria'],
+                    $item['update_data']
+                );
+                
                 if ($product->wasRecentlyCreated) {
                     $stats['created']++;
                 } else {
                     $stats['updated']++;
                 }
-                
-                // Add debugging for processing results
-                if ($lineCount <= 5) {
-                    $this->info("Product " . ($product->wasRecentlyCreated ? 'created' : 'updated') . " successfully");
-                }
-            } else {
-                if ($lineCount <= 5) {
-                    $this->info("Warning: Empty SKU found");
-                }
+            } catch (\Exception $e) {
+                Log::warning('Failed to process product in batch', [
+                    'sku' => $item['search_criteria']['sku'] ?? 'unknown',
+                    'error' => $e->getMessage()
+                ]);
             }
         }
-
-        fclose($handle);
-
-        $this->info("Feed processing completed. Created: {$stats['created']}, Updated: {$stats['updated']}");
-
-        // Clean up the extracted file
-        unlink($priceFile);
+        
+        return $stats;
     }
 
 
