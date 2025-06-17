@@ -161,5 +161,34 @@ class ProductObserver
         }
     }
 
+    public function forceDeleted(Product $product)
+    {
+        Log::info('Product force deleted, cleaning up connection pair products', [
+            'product_id' => $product->id,
+            'supplier_id' => $product->supplier_id
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            // Force delete all connection pair products for this product
+            $deletedCount = ConnectionPairProduct::where('product_id', $product->id)->forceDelete();
+
+            Log::info('Force deleted connection pair products', [
+                'product_id' => $product->id,
+                'deleted_count' => $deletedCount
+            ]);
+
+            DB::commit();
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to force delete connection pair products', [
+                'product_id' => $product->id,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
 
 }

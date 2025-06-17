@@ -21,6 +21,9 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->onFailure(function () {
                 Log::error('Ingram Micro feed update failed (morning)');
+            })
+            ->then(function () {
+                Artisan::call('cleanup:orphaned-connection-pair-products');
             });
             
         $schedule->command('ingram:feed-update')
@@ -29,6 +32,9 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->onFailure(function () {
                 Log::error('Ingram Micro feed update failed (afternoon)');
+            })
+            ->then(function () {
+                Artisan::call('cleanup:orphaned-connection-pair-products');
             });
             
         $schedule->command('ingram:feed-update')
@@ -37,6 +43,9 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->onFailure(function () {
                 Log::error('Ingram Micro feed update failed (evening)');
+            })
+            ->then(function () {
+                Artisan::call('cleanup:orphaned-connection-pair-products');
             });
 
         // Run Amazon bulk catalog update every minute for testing
@@ -131,5 +140,6 @@ class Kernel extends ConsoleKernel
        // Commands\SyncIngramMicroPriceAvailabilityCommand::class,
        // Commands\SyncPrestaShopProductsCommand::class,
         Commands\SyncConnectionPairProductsCommand::class,
+        Commands\CleanupOrphanedConnectionPairProductsCommand::class,
     ];
 }

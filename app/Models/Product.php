@@ -119,6 +119,11 @@ class Product extends Model
             ->withTimestamps();
     }
 
+    public function connectionPairProducts(): HasMany
+    {
+        return $this->hasMany(ConnectionPairProduct::class);
+    }
+
     // Scopes
     public function scopeActive($query)
     {

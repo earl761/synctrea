@@ -128,9 +128,24 @@ class SyncConnectionPairProductsCommand extends Command
             $progressBar->finish();
             $this->newLine(2);
 
-            // Delete orphaned connection pair products (no matching product)
+            // Delete orphaned connection pair products (product_id doesn't exist or soft-deleted products)
             $orphaned = ConnectionPairProduct::whereIn('connection_pair_id', $connectionPairs->pluck('id'))
-                ->whereDoesntHave('product')
+                ->whereNotExists(function($query) {
+                    $query->select(DB::raw(1))
+                          ->from('products')
+                          ->whereRaw('products.id = connection_pair_product.product_id')
+                          ->whereNull('products.deleted_at');
+                })
+                ->get();
+
+            // Also find connection pair products linked to soft-deleted products
+            $softDeletedOrphaned = ConnectionPairProduct::whereIn('connection_pair_id', $connectionPairs->pluck('id'))
+                ->whereExists(function($query) {
+                    $query->select(DB::raw(1))
+                          ->from('products')
+                          ->whereRaw('products.id = connection_pair_product.product_id')
+                          ->whereNotNull('products.deleted_at');
+                })
                 ->get();
 
             $deletedCount = 0;
@@ -138,6 +153,12 @@ class SyncConnectionPairProductsCommand extends Command
                 $cpp->delete();
                 $deletedCount++;
             }
+            
+            foreach ($softDeletedOrphaned as $cpp) {
+                $cpp->delete();
+                $deletedCount++;
+            }
+            
             $this->info("Deleted orphaned connection pair products: {$deletedCount}");
 
             $this->info('Sync completed:');
