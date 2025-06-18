@@ -282,6 +282,40 @@ class ConnectionPairResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
+                    BulkAction::make('moveToDefault')
+                        ->label('Move Products to Default')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading('Move Products to Default Status')
+                        ->modalDescription('This will move all products in the selected connection pairs to default catalog status.')
+                        ->modalSubmitActionLabel('Move to Default')
+                        ->action(function (Collection $records): void {
+                            $totalUpdated = 0;
+                            
+                            foreach ($records as $connectionPair) {
+                                $updated = \App\Models\ConnectionPairProduct::where('connection_pair_id', $connectionPair->id)
+                                    ->where('catalog_status', '!=', \App\Models\ConnectionPairProduct::STATUS_DEFAULT)
+                                    ->update(['catalog_status' => \App\Models\ConnectionPairProduct::STATUS_DEFAULT]);
+                                
+                                $totalUpdated += $updated;
+                            }
+                            
+                            if ($totalUpdated > 0) {
+                                Notification::make()
+                                    ->success()
+                                    ->title('Products moved to default')
+                                    ->body("{$totalUpdated} products have been moved to default status.")
+                                    ->send();
+                            } else {
+                                Notification::make()
+                                    ->warning()
+                                    ->title('No products updated')
+                                    ->body('All products in the selected connection pairs are already in default status.')
+                                    ->send();
+                            }
+                        })
+                        ->deselectRecordsAfterCompletion(),
                 ]),
             ]);
     }
