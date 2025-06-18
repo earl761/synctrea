@@ -522,6 +522,23 @@ class ConnectionPairProductResource extends Resource
                         ->label('Move to Catalog')
                         ->color('success')
                         ->icon('heroicon-o-check'),
+                    Tables\Actions\BulkAction::make('move_to_default')
+                        ->action(function (Collection $records) {
+                            $ids = $records->pluck('id')->toArray();
+                            ConnectionPairProduct::whereIn('id', $ids)
+                                ->update(['catalog_status' => ConnectionPairProduct::STATUS_DEFAULT]);
+                            
+                            Notification::make()
+                                ->success()
+                                ->title('Products Moved to Default')
+                                ->body(count($ids) . ' products have been moved to default status successfully.')
+                                ->send();
+                        })
+                        ->requiresConfirmation()
+                        ->deselectRecordsAfterCompletion()
+                        ->label('Move to Default')
+                        ->color('warning')
+                        ->icon('heroicon-o-arrow-path'),
 
                 ]),
             ]);
