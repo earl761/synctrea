@@ -34,6 +34,13 @@ class ConnectionPairProductObserver
             return;
         }
 
+        // Check if catalog_status changed from 'in_catalog' to 'queued' for Amazon deletion
+        if ($connectionPairProduct->isDirty('catalog_status') &&
+            $connectionPairProduct->getOriginal('catalog_status') === ConnectionPairProduct::STATUS_IN_CATALOG &&
+            $connectionPairProduct->catalog_status === ConnectionPairProduct::STATUS_QUEUED) {
+            $this->handleAmazonDeletion($connectionPairProduct);
+        }
+
         $this->handleSyncTrigger($connectionPairProduct, 'updated');
     }
 
@@ -89,5 +96,73 @@ class ConnectionPairProductObserver
             'error' => $e->getMessage(),
             'trace' => $e->getTraceAsString()
         ]);
+    }
+
+    /**
+     * Handle Amazon deletion when catalog_status changes from 'in_catalog' to 'queued'
+     */
+    private function handleAmazonDeletion(ConnectionPairProduct $connectionPairProduct): void
+    {
+        try {
+            // Get the connection pair
+            $connectionPair = $connectionPairProduct->connectionPair;
+            if (!$connectionPair) {
+                Log::warning('Connection pair not found for Amazon deletion', [
+                    'connection_pair_product_id' => $connectionPairProduct->id
+                ]);
+                return;
+            }
+
+            // Check if this is an Amazon connection
+            if ($connectionPair->destination_type !== 'amazon') {
+                Log::info('Skipping Amazon deletion for non-Amazon connection', [
+                    'connection_pair_product_id' => $connectionPairProduct->id,
+                    'destination_type' => $connectionPair->destination_type
+                ]);
+                return;
+            }
+
+            // Get the related product
+            $product = $connectionPairProduct->product;
+            if (!$product) {
+                Log::warning('Product not found for Amazon deletion', [
+                    'connection_pair_product_id' => $connectionPairProduct->id
+                ]);
+                return;
+            }
+
+            Log::info('Initiating Amazon deletion for product status change', [
+                'connection_pair_product_id' => $connectionPairProduct->id,
+                'product_id' => $product->id,
+                'connection_pair_id' => $connectionPair->id,
+                'sku' => $connectionPairProduct->sku
+            ]);
+
+            // Create Amazon API client and delete from catalog
+            $amazonClient = new \App\Services\Api\AmazonApiClient($connectionPair);
+            $result = $amazonClient->deleteFromSellerCatalog($product);
+
+            if ($result) {
+                Log::info('Successfully initiated Amazon deletion', [
+                    'connection_pair_product_id' => $connectionPairProduct->id,
+                    'product_id' => $product->id
+                ]);
+            } else {
+                Log::warning('Amazon deletion returned false result', [
+                    'connection_pair_product_id' => $connectionPairProduct->id,
+                    'product_id' => $product->id
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Failed to delete product from Amazon', [
+                'connection_pair_product_id' => $connectionPairProduct->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            // Optionally, you could update the product with an error status
+            // $connectionPairProduct->update(['sync_error' => 'Amazon deletion failed: ' . $e->getMessage()]);
+        }
     }
 }

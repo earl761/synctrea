@@ -164,7 +164,7 @@ class IngramMicroFeedUpdateCommand extends Command
         $lineCount = 0;
         $processedSkus = [];
         $batchData = [];
-        $batchSize = 100; // Process in batches of 100
+        $batchSize = 1000; // Process in batches of 100
 
         $stats = [
             'created' => 0,
@@ -177,7 +177,7 @@ class IngramMicroFeedUpdateCommand extends Command
             $progressBar->advance();
             
             // Memory monitoring - log every 1000 lines
-            if ($lineCount % 1000 === 0) {
+            if ($lineCount % 10000 === 0) {
                 $memoryUsage = memory_get_usage(true) / 1024 / 1024; // MB
                 $peakMemory = memory_get_peak_usage(true) / 1024 / 1024; // MB
                 $this->newLine();
@@ -257,7 +257,7 @@ class IngramMicroFeedUpdateCommand extends Command
                     'stock_quantity' => $productData['stock'],
                     'category' => $productData['category'],
                     'type' => $productData['type'],
-                   // 'authorizedToPurchase' => $productData['authorizedToPurchase'],
+                   //'authorizedToPurchase' => $productData['authorizedToPurchase'],
                     'height' => $productData['height'],
                     'width' => $productData['width'],
                     'length' => $productData['length'],

@@ -4,88 +4,106 @@ namespace App\Observers;
 
 use App\Models\PricingRule;
 use App\Models\ConnectionPair;
+use App\Models\ConnectionPairProduct;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 
 class PricingRuleObserver
 {
-    public function saved(PricingRule $pricingRule): void
+    public function saved(PricingRule $pricingRule)
     {
-        // Trigger price update when any pricing rule changes
-        if ($pricingRule->wasChanged()) {
-            // Log::info('Pricing rule changed, recalculating prices', [
-            //     'rule_id' => $pricingRule->id,
-            //     'supplier_id' => $pricingRule->supplier_id,
-            //     'destination_id' => $pricingRule->destination_id
-            // ]);
+        Log::info('PricingRule saved, triggering targeted price recalculation', [
+            'pricing_rule_id' => $pricingRule->id,
+            'supplier_id' => $pricingRule->supplier_id,
+            'destination_id' => $pricingRule->destination_id,
+            'product_id' => $pricingRule->product_id
+        ]);
 
-            // Get all connection pairs affected by this rule
-            $connectionPairIds = \App\Models\ConnectionPair::query()
-                ->where('supplier_id', $pricingRule->supplier_id)
-                ->where('destination_id', $pricingRule->destination_id)
-                ->pluck('id');
-
-            // Recalculate prices for each affected connection pair
-            foreach ($connectionPairIds as $connectionPairId) {
-                try {
-                    Artisan::call('products:recalculate-prices', [
-                        'connection_pair_id' => $connectionPairId
-                    ]);
-                    
-                    Log::info('Completed price recalculation for connection pair', [
-                        'connection_pair_id' => $connectionPairId
-                    ]);
-                } catch (\Exception $e) {
-                    Log::error('Failed to recalculate prices for connection pair', [
-                        'connection_pair_id' => $connectionPairId,
-                        'error' => $e->getMessage()
-                    ]);
-                }
-            }
-
-            // Dispatch event for other listeners
-            $event = new \stdClass();
-            $event->model = $pricingRule;
-            Event::dispatch($event);
+        try {
+            // Recalculate prices for affected products only
+            $this->recalculateAffectedProducts($pricingRule);
+        } catch (\Exception $e) {
+            Log::error('Failed to recalculate prices after PricingRule save', [
+                'pricing_rule_id' => $pricingRule->id,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 
-    public function deleted(PricingRule $pricingRule): void
+    public function deleted(PricingRule $pricingRule)
     {
-        Log::info('Pricing rule deleted, recalculating prices', [
-            'rule_id' => $pricingRule->id,
+        Log::info('PricingRule deleted, triggering targeted price recalculation', [
+            'pricing_rule_id' => $pricingRule->id,
             'supplier_id' => $pricingRule->supplier_id,
-            'destination_id' => $pricingRule->destination_id
+            'destination_id' => $pricingRule->destination_id,
+            'product_id' => $pricingRule->product_id
         ]);
 
-        // Get all connection pairs affected by this rule
-        $connectionPairIds = \App\Models\ConnectionPair::query()
-            ->where('supplier_id', $pricingRule->supplier_id)
-            ->where('destination_id', $pricingRule->destination_id)
-            ->pluck('id');
+        try {
+            // Recalculate prices for affected products only
+            $this->recalculateAffectedProducts($pricingRule);
+        } catch (\Exception $e) {
+            Log::error('Failed to recalculate prices after PricingRule deletion', [
+                'pricing_rule_id' => $pricingRule->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
 
-        // Recalculate prices for each affected connection pair
-        foreach ($connectionPairIds as $connectionPairId) {
+    /**
+     * Recalculate prices for products affected by this pricing rule
+     */
+    protected function recalculateAffectedProducts(PricingRule $pricingRule)
+    {
+        // Build query for affected ConnectionPairProducts
+        $query = ConnectionPairProduct::query()
+            ->join('connection_pairs', 'connection_pair_products.connection_pair_id', '=', 'connection_pairs.id')
+            ->where('connection_pairs.supplier_id', $pricingRule->supplier_id)
+            ->where('connection_pairs.destination_id', $pricingRule->destination_id)
+            ->where('connection_pairs.is_active', true);
+        
+        // If this is a product-specific rule, only affect that product
+        if ($pricingRule->product_id) {
+            $query->where('connection_pair_products.product_id', $pricingRule->product_id);
+        }
+        
+        $affectedProducts = $query->select('connection_pair_products.*')->get();
+        
+        Log::info('Recalculating prices for affected products', [
+            'pricing_rule_id' => $pricingRule->id,
+            'affected_count' => $affectedProducts->count()
+        ]);
+        
+        $updatedCount = 0;
+        
+        foreach ($affectedProducts as $connectionPairProduct) {
             try {
-                Artisan::call('products:recalculate-prices', [
-                    'connection_pair_id' => $connectionPairId
-                ]);
+                $oldPrice = $connectionPairProduct->final_price;
+                $newPrice = $connectionPairProduct->calculateFinalPrice();
                 
-                // Log::info('Completed price recalculation for connection pair', [
-                //     'connection_pair_id' => $connectionPairId
-                // ]);
+                if ($oldPrice != $newPrice) {
+                    $connectionPairProduct->update(['final_price' => $newPrice]);
+                    $updatedCount++;
+                    
+                    Log::debug('Updated product price', [
+                        'connection_pair_product_id' => $connectionPairProduct->id,
+                        'old_price' => $oldPrice,
+                        'new_price' => $newPrice
+                    ]);
+                }
             } catch (\Exception $e) {
-                Log::error('Failed to recalculate prices for connection pair', [
-                    'connection_pair_id' => $connectionPairId,
+                Log::error('Failed to recalculate price for product', [
+                    'connection_pair_product_id' => $connectionPairProduct->id,
                     'error' => $e->getMessage()
                 ]);
             }
         }
-
-        // Dispatch event for other listeners
-        $event = new \stdClass();
-        $event->model = $pricingRule;
-        Event::dispatch($event);
+        
+        Log::info('Completed targeted price recalculation', [
+            'pricing_rule_id' => $pricingRule->id,
+            'total_affected' => $affectedProducts->count(),
+            'updated_count' => $updatedCount
+        ]);
     }
 }

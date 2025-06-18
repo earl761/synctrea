@@ -98,10 +98,67 @@ class ProductObserver
         $syncService = app(SyncService::class);
         $changedFields = array_keys($product->getDirty());
         
+        // Log the update
+        Log::info('Product updated, syncing changes', [
+            'product_id' => $product->id,
+            'changed_fields' => $changedFields
+        ]);
+
         try {
+            // Handle pricing-related updates specifically
+            if (in_array('cost_price', $changedFields) || in_array('retail_price', $changedFields)) {
+                $this->handlePricingUpdate($product, $changedFields);
+            }
+            
             $syncService->syncProductToConnectionPairs($product, $changedFields);
         } catch (\Exception $e) {
             Log::error('Failed to sync product updates via SyncService', [
+                'product_id' => $product->id,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Handle pricing updates for this specific product only
+     */
+    protected function handlePricingUpdate(Product $product, array $changedFields)
+    {
+        Log::info('Handling pricing update for product', [
+            'product_id' => $product->id,
+            'changed_fields' => $changedFields
+        ]);
+
+        try {
+            // Only update ConnectionPairProducts for this specific product
+            $connectionPairProducts = ConnectionPairProduct::where('product_id', $product->id)->get();
+            
+            foreach ($connectionPairProducts as $connectionPairProduct) {
+                // Update base price if cost_price changed
+                if (in_array('cost_price', $changedFields)) {
+                    $connectionPairProduct->price = $product->cost_price;
+                }
+                
+                // Update fila_price if retail_price changed
+                if (in_array('retail_price', $changedFields)) {
+                    $connectionPairProduct->fila_price = $product->retail_price;
+                }
+                
+                // Recalculate final price with pricing rules
+                $finalPrice = $connectionPairProduct->calculateFinalPrice();
+                $connectionPairProduct->final_price = $finalPrice;
+                
+                $connectionPairProduct->save();
+                
+                Log::debug('Updated connection pair product pricing', [
+                    'connection_pair_product_id' => $connectionPairProduct->id,
+                    'product_id' => $product->id,
+                    'new_final_price' => $finalPrice
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to handle pricing update', [
                 'product_id' => $product->id,
                 'error' => $e->getMessage()
             ]);

@@ -35,9 +35,8 @@ class EventServiceProvider extends ServiceProvider
         \App\Models\ConnectionPair::observe(\App\Observers\ConnectionPairObserver::class);
         \App\Models\ConnectionPairProduct::observe(\App\Observers\ConnectionPairProductObserver::class);
 
-        // Register price update listener for specific model events
-        Event::listen('eloquent.saved: *', \App\Listeners\PriceUpdateListener::class);
-        Event::listen('eloquent.deleted: *', \App\Listeners\PriceUpdateListener::class);
+        // Removed global event listeners to prevent unintended pricing rule triggers
+        // Pricing updates are now handled by specific model observers
     }
 
     /**
