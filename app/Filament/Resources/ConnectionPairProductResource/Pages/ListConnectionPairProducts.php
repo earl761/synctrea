@@ -89,6 +89,64 @@ class ListConnectionPairProducts extends ListRecords
                 ->url(fn () => $this->getResource()::getUrl('create', [
                     'connection_pair_id' => $this->connection_pair_id
                 ])),
+            \Filament\Actions\Action::make('on_demand_sync')
+                ->label('On-Demand Sync')
+                ->icon('heroicon-o-arrow-path')
+                ->color('warning')
+                ->action(function () {
+                    $connectionPairId = $this->connection_pair_id;
+                    
+                    if (!$connectionPairId) {
+                        \Filament\Notifications\Notification::make()
+                            ->danger()
+                            ->title('Sync Failed')
+                            ->body('Connection pair ID not found.')
+                            ->send();
+                        return;
+                    }
+                    
+                    // Get the connection pair to check destination
+                    $connectionPair = \App\Models\ConnectionPair::find($connectionPairId);
+                    if (!$connectionPair) {
+                        \Filament\Notifications\Notification::make()
+                            ->danger()
+                            ->title('Sync Failed')
+                            ->body('Connection pair not found.')
+                            ->send();
+                        return;
+                    }
+                    
+                    // Check if destination is Amazon
+                    if (strtolower($connectionPair->destination->name) === 'amazon') {
+                        try {
+                            \Illuminate\Support\Facades\Artisan::call('amazon:bulk-catalog-update', [
+                                'connectionPairId' => $connectionPairId
+                            ]);
+                            
+                            \Filament\Notifications\Notification::make()
+                                ->success()
+                                ->title('Sync Initiated')
+                                ->body('Amazon bulk catalog update has been started for this connection pair.')
+                                ->send();
+                        } catch (\Exception $e) {
+                            \Filament\Notifications\Notification::make()
+                                ->danger()
+                                ->title('Sync Failed')
+                                ->body('Failed to start Amazon sync: ' . $e->getMessage())
+                                ->send();
+                        }
+                    } else {
+                        \Filament\Notifications\Notification::make()
+                            ->warning()
+                            ->title('Sync Not Available')
+                            ->body('On-demand sync is currently only available for Amazon destinations.')
+                            ->send();
+                    }
+                })
+                ->requiresConfirmation()
+                ->modalHeading('Confirm On-Demand Sync')
+                ->modalDescription('This will trigger a bulk catalog update for all products in this connection pair. Are you sure you want to proceed?')
+                ->modalSubmitActionLabel('Start Sync'),
         ];
     }
 
